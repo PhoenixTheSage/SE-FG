@@ -19,6 +19,7 @@ internal static class AnomalyTerminalHook
 
     static readonly object Gate = new();
     static bool _installed;
+    static object _page;
 
     public static bool Installed
     {
@@ -41,6 +42,7 @@ internal static class AnomalyTerminalHook
                 return false;
 
             Populate(page);
+            _page = page;
             _installed = true;
             MyLog.Default.WriteLine("FrameGen: Rich HUD page under Anomaly Shaders / " + FolderTitle + " / " + SettingsPage);
             DebugLog.Write("Anomaly TerminalConfigRegistry page " + PageTitle);
@@ -51,7 +53,27 @@ internal static class AnomalyTerminalHook
     public static void Reset()
     {
         lock (Gate)
+        {
             _installed = false;
+            _page = null;
+        }
+    }
+
+    public static void TryRefresh()
+    {
+        object page;
+        lock (Gate)
+            page = _page;
+        if (page == null)
+            return;
+        try
+        {
+            Invoke(page.GetType(), page, "Refresh");
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write("Anomaly Refresh: " + e.GetType().Name + ": " + e.Message);
+        }
     }
 
     static object RequestPageUnlocked()
@@ -109,7 +131,11 @@ internal static class AnomalyTerminalHook
         Invoke(type, page, "Checkbox", "Enabled",
             (Func<bool>)RichHudOptions.GetEnabled,
             (Action<bool>)RichHudOptions.SetEnabled,
-            "Insert an interpolated frame between presented frames. Turn VSync off.");
+            "Insert an interpolated frame after each real Present. Turn VSync off.");
+        Invoke(type, page, "Checkbox", "Show FPS overlay",
+            (Func<bool>)RichHudOptions.GetShowOverlay,
+            (Action<bool>)RichHudOptions.SetShowOverlay,
+            "Corner FPS line (game and displayed). Requires Rich HUD Master.");
         Invoke(type, page, "Button", "Show Status",
             (Action)RichHudOptions.ShowStatus,
             "GPU, FrameGen support, and Anomaly buffer status");

@@ -13,6 +13,7 @@ public class Config : INotifyPropertyChanged
     #region Options
 
     private bool enabled = true;
+    private bool showOverlay = true;
 
     #endregion
 
@@ -23,11 +24,19 @@ public class Config : INotifyPropertyChanged
     [Separator("Frame Generation")]
 
     [Checkbox(label: "Enabled",
-        description: "Insert an interpolated frame between presented frames. Turn VSync off; extra Present waits a full refresh when it is on.")]
+        description: "Insert an interpolated frame after each real Present. Turn VSync off; with VSync on the extra Present waits a refresh and is skipped.")]
     public bool Enabled
     {
         get => enabled;
         set => SetField(ref enabled, value);
+    }
+
+    [Checkbox(label: "Show FPS overlay",
+        description: "Corner FPS line when Anomaly and Rich HUD Master are loaded (game FPS and displayed FPS).")]
+    public bool ShowOverlay
+    {
+        get => showOverlay;
+        set => SetField(ref showOverlay, value);
     }
 
     [Separator("Status")]
@@ -57,6 +66,7 @@ public class Config : INotifyPropertyChanged
             DebugLog.Write("config Enabled=" + enabled);
             FrameGenRuntime.NotifyConfigChanged();
         }
+        Plugin.RefreshConfigUi();
     }
 
     private void SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = null)

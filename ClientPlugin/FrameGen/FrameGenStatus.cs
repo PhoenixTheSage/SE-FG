@@ -58,6 +58,11 @@ public static class FrameGenStatus
         var cfg = Config.Current;
         sb.Append("On   ").AppendLine(Yes(cfg != null && cfg.Enabled));
         sb.Append("Res  ").Append(FrameGenRuntime.Width).Append('x').AppendLine(FrameGenRuntime.Height.ToString());
+        sb.Append("FPS  ").Append(FrameGenRuntime.GameFps.ToString("0"))
+            .Append(" game · ").Append(FrameGenRuntime.DisplayFps.ToString("0")).Append(" displayed");
+        if (FrameGenRuntime.DisplayRefreshHz >= 30)
+            sb.Append(" · ").Append(FrameGenRuntime.DisplayRefreshHz).Append(" Hz");
+        sb.AppendLine();
     }
 
     static void AppendGenerate(StringBuilder sb)

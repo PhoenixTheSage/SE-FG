@@ -28,29 +28,28 @@ static const int2 kOff[8] =
     int2(1, 1), int2(-1, 1), int2(1, -1), int2(-1, -1)
 };
 
-float DepthAt(int2 pixel)
+float DepthAtUv(float2 uv)
 {
-    pixel = clamp(pixel, int2(0, 0), int2(Width - 1, Height - 1));
-    return DepthTex.Load(int3(pixel, 0)).r;
+    return DepthTex.SampleLevel(LinearClamp, saturate(uv), 0).r;
 }
 
-float2 DilateMotion(int2 pixel)
+float2 DilateMotion(float2 uv)
 {
-    float best = DepthAt(pixel);
-    int2 bestPx = pixel;
+    float best = DepthAtUv(uv);
+    float2 bestUv = uv;
     [unroll]
     for (int i = 0; i < 8; i++)
     {
-        int2 p = pixel + kOff[i];
-        float d = DepthAt(p);
+        float2 p = uv + float2(kOff[i]) * float2(InvWidth, InvHeight);
+        float d = DepthAtUv(p);
         bool nearer = InvertedDepth ? (d > best) : (d < best);
         if (nearer)
         {
             best = d;
-            bestPx = p;
+            bestUv = p;
         }
     }
-    return MotionTex.Load(int3(clamp(bestPx, int2(0, 0), int2(Width - 1, Height - 1)), 0)).xy;
+    return MotionTex.SampleLevel(LinearClamp, saturate(bestUv), 0).xy;
 }
 
 float DepthDisocclude(float sampleDepth, float centerDepth)
@@ -68,7 +67,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
     int2 pixel = int2(id.xy);
     float2 uv = (float2(pixel) + 0.5) * float2(InvWidth, InvHeight);
-    float2 mvPx = DilateMotion(pixel) * float2(MvScaleX, MvScaleY);
+    float2 mvPx = DilateMotion(uv) * float2(MvScaleX, MvScaleY);
     float2 mvUv = mvPx * float2(InvWidth, InvHeight);
 
     float2 uvPrev = uv + 0.5 * mvUv;
@@ -76,12 +75,10 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
     float4 prev = PrevColor.SampleLevel(LinearClamp, uvPrev, 0);
     float4 curr = CurrColor.SampleLevel(LinearClamp, uvCurr, 0);
-    float centerDepth = DepthAt(pixel);
+    float centerDepth = DepthAtUv(uv);
 
-    int2 prevPx = int2(uvPrev * float2(Width, Height));
-    int2 currPx = int2(uvCurr * float2(Width, Height));
-    float wPrev = DepthDisocclude(DepthAt(prevPx), centerDepth);
-    float wCurr = DepthDisocclude(DepthAt(currPx), centerDepth);
+    float wPrev = DepthDisocclude(DepthAtUv(uvPrev), centerDepth);
+    float wCurr = DepthDisocclude(DepthAtUv(uvCurr), centerDepth);
 
     bool prevIn = all(uvPrev >= 0.0) && all(uvPrev <= 1.0);
     bool currIn = all(uvCurr >= 0.0) && all(uvCurr <= 1.0);

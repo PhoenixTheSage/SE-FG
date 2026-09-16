@@ -60,5 +60,6 @@ internal static class DeviceDisposePatch
         if (__instance is not Device device || device.IsDisposed)
             return;
         FrameGenHost.OnDeviceDisposing(device);
+        ClientPlugin.Patches.PostPpHudPass.Reset();
     }
 }

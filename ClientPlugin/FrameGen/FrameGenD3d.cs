@@ -26,9 +26,16 @@ internal static class FrameGenD3d
 
     private static Texture2D _currCopy;
     private static Texture2D _interpCopy;
+    private static Texture2D _sceneCopy;
+    private static Texture2D _hudCopy;
     private static uint _copyW;
     private static uint _copyH;
     private static Format _copyFmt = Format.Unknown;
+    private static PixelShader _blitPs;
+    private static Buffer _blitCb;
+    private static SamplerState _blitSampler;
+    private static ShaderResourceView _uavSrv;
+    private static readonly byte[] BlitCbScratch = new byte[16];
 
     private static ComputeShader _cs;
     private static Buffer _csCb;
@@ -140,7 +147,7 @@ internal static class FrameGenD3d
 
     internal static bool EnsureColorCopies(Device device, Texture2DDescription desc)
     {
-        if (_currCopy != null && _interpCopy != null &&
+        if (_currCopy != null && _interpCopy != null && _sceneCopy != null && _hudCopy != null &&
             _copyW == (uint)desc.Width && _copyH == (uint)desc.Height && _copyFmt == desc.Format)
             return true;
         ReleaseCopies();
@@ -159,6 +166,8 @@ internal static class FrameGenD3d
             };
             _currCopy = new Texture2D(device, td);
             _interpCopy = new Texture2D(device, td);
+            _sceneCopy = new Texture2D(device, td);
+            _hudCopy = new Texture2D(device, td);
             _copyW = (uint)desc.Width;
             _copyH = (uint)desc.Height;
             _copyFmt = desc.Format;
@@ -174,6 +183,16 @@ internal static class FrameGenD3d
 
     internal static Texture2D CurrCopy => _currCopy;
     internal static Texture2D InterpCopy => _interpCopy;
+    internal static Texture2D SceneCopy => _sceneCopy;
+    internal static Texture2D HudCopy => _hudCopy;
+
+    internal static void CopyFromBackbuffer(DeviceContext context, Resource source, Texture2D dest)
+    {
+        if (context == null || source == null || dest == null)
+            return;
+        UnbindPipeline(context);
+        context.CopyResource(source, dest);
+    }
 
     internal static int Interpolate(
         Device device,
@@ -252,7 +271,10 @@ internal static class FrameGenD3d
             context.Dispatch((int)((width + 7) / 8), (int)((height + 7) / 8), 1);
             UnbindPipeline(context);
 
-            context.CopyResource(_uavTex, output);
+            if (output != null && _uavTex != null &&
+                TryGetTexture2D(output, out var outTex) &&
+                outTex.Description.Format == _uavTex.Description.Format)
+                context.CopyResource(_uavTex, output);
             context.CopyResource(color, _prevColor);
             _hasPrev = true;
             FrameGenHost.SetError("ok");
@@ -472,6 +494,13 @@ internal static class FrameGenD3d
                 Format = uavDesc.Format,
                 Dimension = UnorderedAccessViewDimension.Texture2D
             });
+            DisposeView(ref _uavSrv);
+            _uavSrv = new ShaderResourceView(device, _uavTex, new ShaderResourceViewDescription
+            {
+                Format = uavDesc.Format,
+                Dimension = SharpDX.Direct3D.ShaderResourceViewDimension.Texture2D,
+                Texture2D = { MipLevels = 1 }
+            });
             _fgW = width;
             _fgH = height;
             _fgFmt = colorFormat;
@@ -554,17 +583,25 @@ internal static class FrameGenD3d
     }
 
     private static bool TryCreateColorSrv(Device device, Resource resource, Format resourceFormat,
-        out ShaderResourceView srv)
+        out ShaderResourceView srv, bool preferSrgbView = true)
     {
         srv = null;
-        var formats = new[]
-        {
-            TypelessColor(resourceFormat),
-            resourceFormat,
-            Format.R8G8B8A8_UNorm,
-            Format.B8G8R8A8_UNorm,
-            Format.R16G16B16A16_Float
-        };
+        var formats = preferSrgbView && IsSrgb(resourceFormat)
+            ? new[]
+            {
+                resourceFormat,
+                TypelessColor(resourceFormat),
+                Format.R8G8B8A8_UNorm_SRgb,
+                Format.B8G8R8A8_UNorm_SRgb,
+            }
+            : new[]
+            {
+                TypelessColor(resourceFormat),
+                resourceFormat,
+                Format.R8G8B8A8_UNorm,
+                Format.B8G8R8A8_UNorm,
+                Format.R16G16B16A16_Float
+            };
         foreach (var fmt in formats)
         {
             try
@@ -658,6 +695,113 @@ internal static class FrameGenD3d
         return tex != null && !tex.IsDisposed;
     }
 
+    internal static bool BlitGeneratedFrame(Device device, DeviceContext context, Resource dest)
+    {
+        if (device == null || context == null || dest == null || _uavTex == null ||
+            _sceneCopy == null || _hudCopy == null)
+            return false;
+        if (!EnsureBlitPipeline(device) || !TryGetTexture2D(dest, out var destTex))
+            return false;
+
+        ShaderResourceView hudSrv = null;
+        ShaderResourceView sceneSrv = null;
+        RenderTargetView rtv = null;
+        try
+        {
+            // Copies are *_SRGB: an UNORM view cannot be created, so Load is already linear.
+            // SrgbIn must stay 0 or HUD is linearized twice and goes black.
+            if (!TryCreateColorSrv(device, _hudCopy, _hudCopy.Description.Format, out hudSrv) ||
+                !TryCreateColorSrv(device, _sceneCopy, _sceneCopy.Description.Format, out sceneSrv))
+                return false;
+
+            try
+            {
+                rtv = new RenderTargetView(device, dest);
+            }
+            catch
+            {
+                rtv = new RenderTargetView(device, dest, new RenderTargetViewDescription
+                {
+                    Format = destTex.Description.Format,
+                    Dimension = RenderTargetViewDimension.Texture2D
+                });
+            }
+
+            System.Buffer.BlockCopy(BitConverter.GetBytes(0u), 0, BlitCbScratch, 0, 4);
+            var mapped = context.MapSubresource(_blitCb, 0, MapMode.WriteDiscard, SharpDX.Direct3D11.MapFlags.None);
+            Marshal.Copy(BlitCbScratch, 0, mapped.DataPointer, 16);
+            context.UnmapSubresource(_blitCb, 0);
+
+            UnbindPipeline(context);
+            context.OutputMerger.BlendState = null;
+            context.OutputMerger.DepthStencilState = null;
+            context.Rasterizer.SetViewport(0, 0, destTex.Description.Width, destTex.Description.Height, 0f, 1f);
+            context.InputAssembler.InputLayout = null;
+            context.InputAssembler.PrimitiveTopology = SharpDX.Direct3D.PrimitiveTopology.TriangleList;
+            context.VertexShader.Set(_mvVs);
+            context.PixelShader.Set(_blitPs);
+            context.PixelShader.SetConstantBuffer(0, _blitCb);
+            context.PixelShader.SetSampler(0, _blitSampler);
+            context.PixelShader.SetShaderResource(0, _uavSrv);
+            context.PixelShader.SetShaderResource(1, hudSrv);
+            context.PixelShader.SetShaderResource(2, sceneSrv);
+            context.OutputMerger.SetTargets(rtv);
+            context.Draw(3, 0);
+            UnbindPipeline(context);
+            return true;
+        }
+        catch (Exception e)
+        {
+            FrameGenHost.SetError("blit generated frame: " + e.GetType().Name + ": " + e.Message);
+            return false;
+        }
+        finally
+        {
+            DisposeView(ref rtv);
+            DisposeView(ref hudSrv);
+            DisposeView(ref sceneSrv);
+        }
+    }
+
+    private static bool EnsureBlitPipeline(Device device)
+    {
+        if (_blitPs != null && _blitCb != null && _blitSampler != null && _mvVs != null)
+            return true;
+        if (!EnsureMvShaders(device))
+            return false;
+        try
+        {
+            _blitPs ??= new PixelShader(device, ShaderBytecode.CopyPs);
+            _blitCb ??= new Buffer(device, new BufferDescription
+            {
+                SizeInBytes = 16,
+                Usage = ResourceUsage.Dynamic,
+                BindFlags = BindFlags.ConstantBuffer,
+                CpuAccessFlags = CpuAccessFlags.Write
+            });
+            _blitSampler ??= new SamplerState(device, new SamplerStateDescription
+            {
+                Filter = Filter.MinMagMipPoint,
+                AddressU = TextureAddressMode.Clamp,
+                AddressV = TextureAddressMode.Clamp,
+                AddressW = TextureAddressMode.Clamp
+            });
+            return true;
+        }
+        catch (Exception e)
+        {
+            FrameGenHost.SetError("failed to create blit pipeline: " + e.GetType().Name);
+            return false;
+        }
+    }
+
+    private static bool IsSrgb(Format format)
+    {
+        return format == Format.R8G8B8A8_UNorm_SRgb ||
+               format == Format.B8G8R8A8_UNorm_SRgb ||
+               format == Format.B8G8R8X8_UNorm_SRgb;
+    }
+
     private static Format TypelessColor(Format format)
     {
         switch (format)
@@ -712,6 +856,8 @@ internal static class FrameGenD3d
     {
         DisposeView(ref _currCopy);
         DisposeView(ref _interpCopy);
+        DisposeView(ref _sceneCopy);
+        DisposeView(ref _hudCopy);
         _copyW = _copyH = 0;
         _copyFmt = Format.Unknown;
     }
@@ -733,6 +879,7 @@ internal static class FrameGenD3d
     private static void ReleaseInterpolatorTargets()
     {
         DisposeView(ref _uav);
+        DisposeView(ref _uavSrv);
         DisposeView(ref _uavTex);
         DisposeView(ref _prevSrv);
         DisposeView(ref _prevColor);
@@ -746,6 +893,9 @@ internal static class FrameGenD3d
         DisposeView(ref _cs);
         DisposeView(ref _csCb);
         DisposeView(ref _csSampler);
+        DisposeView(ref _blitPs);
+        DisposeView(ref _blitCb);
+        DisposeView(ref _blitSampler);
     }
 
     private static void DisposeView<T>(ref T view) where T : class, IDisposable

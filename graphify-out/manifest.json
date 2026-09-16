@@ -1,0 +1,428 @@
+{
+  ".vscode/launch.json": {
+    "mtime": 1787983100.626894,
+    "seen": 1789559718.353216,
+    "ast_hash": "c02850ec69366c233175937833ad1d19",
+    "semantic_hash": ""
+  },
+  ".vscode/settings.json": {
+    "mtime": 1787898856.0959382,
+    "seen": 1789559718.353216,
+    "ast_hash": "d4cfc4a19c83726658ff7032531c8b21",
+    "semantic_hash": ""
+  },
+  ".vscode/tasks.json": {
+    "mtime": 1788073369.1341245,
+    "seen": 1789559718.353216,
+    "ast_hash": "d73b80426c3ac4cd6bad97cf6b3014e9",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/ClientPlugin.csproj": {
+    "mtime": 1789482497.4697878,
+    "seen": 1789559718.353216,
+    "ast_hash": "de8301af8ddf052e9f8b807b5db3033b",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Config.cs": {
+    "mtime": 1789537564.6208324,
+    "seen": 1789559718.353216,
+    "ast_hash": "921f9ba2a6198a0e9f40e06c905e8761",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Deploy.sh": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "1394049e5d0bfe6006e71ee0a539849c",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/AnomalyHook.cs": {
+    "mtime": 1789535820.9748962,
+    "seen": 1789559718.353216,
+    "ast_hash": "16091fd42f56c467542ae6e52c743868",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/CameraHistory.cs": {
+    "mtime": 1789482333.1497035,
+    "seen": 1789559718.353216,
+    "ast_hash": "5a435da19271b531f6149777f563223a",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/DebugLog.cs": {
+    "mtime": 1789482294.736974,
+    "seen": 1789559718.353216,
+    "ast_hash": "bc8b4dbe96556c74f04aec8178f868ab",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/FrameGenD3d.cs": {
+    "mtime": 1789543267.8947344,
+    "seen": 1789559718.353216,
+    "ast_hash": "4d2c3a39c9835c6a3f8d2982df9517ec",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/FrameGenHost.cs": {
+    "mtime": 1789484562.1394956,
+    "seen": 1789559718.353216,
+    "ast_hash": "3f97eca7bd74394524e1a8b22085be1a",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/FrameGenRuntime.cs": {
+    "mtime": 1789559695.9105566,
+    "seen": 1789559718.353216,
+    "ast_hash": "f0e27183fab8f3063d86d0f815651d88",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/FrameGenStatus.cs": {
+    "mtime": 1789559670.5464535,
+    "seen": 1789559718.353216,
+    "ast_hash": "38e0cb91920c52745229eadabdef1a38",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/GpuSupport.cs": {
+    "mtime": 1789482535.5322542,
+    "seen": 1789559718.353216,
+    "ast_hash": "46add504760b6832342d98e5fc086b4c",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/PostPpHudSpace.cs": {
+    "mtime": 1789538508.6454718,
+    "seen": 1789559718.353216,
+    "ast_hash": "f89cf6171aaf319ff073f42df45e0748",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/RenderTraceBind.cs": {
+    "mtime": 1789482294.740003,
+    "seen": 1789559718.353216,
+    "ast_hash": "50560729785b94f46b8d4ac65bb192f0",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/ShaderBytecode.cs": {
+    "mtime": 1789552382.5216415,
+    "seen": 1789559718.353216,
+    "ast_hash": "bfaf49b4d7a4b64b8db7b71c5e63ba52",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/FrameGen/VelocityAcceptance.cs": {
+    "mtime": 1789482294.743032,
+    "seen": 1789559718.353216,
+    "ast_hash": "c4941eabe633de5f833e25fc322df7ee",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Patches/DeviceDisposePatch.cs": {
+    "mtime": 1789538524.7090018,
+    "seen": 1789559718.353216,
+    "ast_hash": "d2f3e635c14ebb3b9b971ab1595aa7e8",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Patches/DrawPatch.cs": {
+    "mtime": 1789482480.0516796,
+    "seen": 1789559718.353216,
+    "ast_hash": "9ad061e0f0cef84d0df00d30998cb0f6",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Patches/DrawScenePatch.cs": {
+    "mtime": 1789545592.3556688,
+    "seen": 1789559718.353216,
+    "ast_hash": "9e2885e90e3d522ead2c3bc47658ab9b",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Patches/GetDeviceVSyncModePatch.cs": {
+    "mtime": 1789482480.8135817,
+    "seen": 1789559718.353216,
+    "ast_hash": "68a4c8f558ac28c99ed8918c67934537",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Patches/PostPpHudPass.cs": {
+    "mtime": 1789552336.979755,
+    "seen": 1789559718.353216,
+    "ast_hash": "21342733fb3e2a3f888b4c8976a4e464",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Patches/PresentPatch.cs": {
+    "mtime": 1789535796.861413,
+    "seen": 1789559718.353216,
+    "ast_hash": "abf9ec4955839cb606a505894c69e301",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Plugin.cs": {
+    "mtime": 1789537596.5017254,
+    "seen": 1789559718.353216,
+    "ast_hash": "ee6278a9731b1e7255f5af2f92d773fb",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Preloader.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "a649e5ded7526287c0c378b96ee78451",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/RichHud/AnomalyTerminalHook.cs": {
+    "mtime": 1789537567.9690118,
+    "seen": 1789559718.353216,
+    "ast_hash": "664ffe218a74510040df12ee72272796",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/RichHud/HudOverlayBind.cs": {
+    "mtime": 1789535787.9691367,
+    "seen": 1789559718.353216,
+    "ast_hash": "68810fa5da4daa18d8f0d23e25d38b45",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/RichHud/RichHudOptions.cs": {
+    "mtime": 1789537565.0391736,
+    "seen": 1789559718.353216,
+    "ast_hash": "64a05a2cdb614e12c83e289cb95b8f94",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/RichHud/RichHudSession.cs": {
+    "mtime": 1789535806.501962,
+    "seen": 1789559718.353216,
+    "ast_hash": "987cfed0dd4f88a5ff1e3c6d3ed1362c",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/ConfigStorage.cs": {
+    "mtime": 1789482625.8403988,
+    "seen": 1789559718.353216,
+    "ast_hash": "cd28ac767cc78c6eb0adb5ee9d0c94e5",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Button.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "13b87f0beb2c8161b5ebe58d358cec02",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Checkbox.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "d986c68fc17a01b78d6f4dc396d5d479",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Color.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "2bf80d54193c67972db5b8df31dece42",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Control.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "e217cc9ff8edb0470ca490b269154e20",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Dropdown.cs": {
+    "mtime": 1789482493.7304654,
+    "seen": 1789559718.353216,
+    "ast_hash": "3b63550a2211a111995818df9f564a52",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Element.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "83e1494df5881baaf3484a0b1360f0e5",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Keybind.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "63cdc7476230099ef8df44e3778b2fd8",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Separator.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "e1eda96ccabd23e0838f0a872b253a3a",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Slider.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "89a047e356ffc78472915ab6b0de51ae",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Elements/Textbox.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "f97b414f2fcdc0edd47a47a4f4799456",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Layouts/Layout.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "4e83cce9976506530535d9c3f039677d",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Layouts/None.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "111c5a570c24878c83ffa9cd1ae5b28d",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Layouts/Simple.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "3a87c6b4f208c7b8213eb7f6f042f19e",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/SettingsGenerator.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "354301f69cec76bed06614c2b2ec8825",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/SettingsScreen.cs": {
+    "mtime": 1788846516.91038,
+    "seen": 1789559718.353216,
+    "ast_hash": "cb4dc3193b1ee12995c2f6811d23210b",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/StatusScreen.cs": {
+    "mtime": 1789482494.6921842,
+    "seen": 1789559718.353216,
+    "ast_hash": "a357e3b03ed33f70163bc8d5b8a8c4e4",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Tools/Binding.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "c422726454c063eccb597cdc99ae8e7c",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Settings/Tools/Tools.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "9775fa5a560efb1aaa866587dff1593f",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Tools/GameAssembliesToPublicize.cs": {
+    "mtime": 1787864767.5012257,
+    "seen": 1789559718.353216,
+    "ast_hash": "bbe837f5a2695f852819af15bb603112",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Tools/Hashing.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "6a7c45189f6dd566c797457a7cd5075a",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Tools/IgnoresAccessChecksToAttribute.cs": {
+    "mtime": 1787864779.8644347,
+    "seen": 1789559718.353216,
+    "ast_hash": "90c959640924741a0053a61bc0c19adc",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Tools/PreloaderHelpers.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "7dfa1e780ebe0c251a19f0999af4eab5",
+    "semantic_hash": ""
+  },
+  "ClientPlugin/Tools/TranspilerHelpers.cs": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "d86db75f54619a1674101a4271dab0ac",
+    "semantic_hash": ""
+  },
+  "FrameGen.sln": {
+    "mtime": 1789482536.0694325,
+    "seen": 1789559718.353216,
+    "ast_hash": "7ff51b4f95ab2a3dc78ed7a459461375",
+    "semantic_hash": ""
+  },
+  "Tests/AnomalyAcceptance.csproj": {
+    "mtime": 1789482530.1298196,
+    "seen": 1789559718.353216,
+    "ast_hash": "35b7b52c1ae370b284dae0b58b403c9b",
+    "semantic_hash": ""
+  },
+  "Tests/Program.cs": {
+    "mtime": 1789482526.1365044,
+    "seen": 1789559718.353216,
+    "ast_hash": "3f37c49048d68df5df50294d0920eac4",
+    "semantic_hash": ""
+  },
+  "clean.sh": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "748864fa06a37f8673143e3d8087b710",
+    "semantic_hash": ""
+  },
+  "setup.py": {
+    "mtime": 1787822419.488703,
+    "seen": 1789559718.353216,
+    "ast_hash": "74c1e19f7413488ffd481f4f9197a270",
+    "semantic_hash": ""
+  },
+  "verify_props.sh": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "28690151807a82db23740a7021af635a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/a5c-ai-babysitter-hlsl/README.md": {
+    "mtime": 1788516266.152685,
+    "seen": 1789559718.353216,
+    "ast_hash": "62ae4bf9273b701007be246a7a3eb922",
+    "semantic_hash": ""
+  },
+  ".agents/skills/a5c-ai-babysitter-hlsl/SKILL.md": {
+    "mtime": 1788829828.4222832,
+    "seen": 1789559718.353216,
+    "ast_hash": "5fd078b07385e0a22c53960efce5ae6a",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/a5c-ai-babysitter-hlsl/README.md": {
+    "mtime": 1788516266.152685,
+    "seen": 1789559718.353216,
+    "ast_hash": "62ae4bf9273b701007be246a7a3eb922",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/a5c-ai-babysitter-hlsl/SKILL.md": {
+    "mtime": 1788516266.149358,
+    "seen": 1789559718.353216,
+    "ast_hash": "5fd078b07385e0a22c53960efce5ae6a",
+    "semantic_hash": ""
+  },
+  ".github/copilot-instructions.md": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "9d52d613dd3bae00479e061e46df9693",
+    "semantic_hash": ""
+  },
+  ".vscode/AGENTS.md": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "d27cd5d91e492d82b51faf81162364f6",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1789540262.370364,
+    "seen": 1789559718.353216,
+    "ast_hash": "cfce4759c2126618a354957b467b4976",
+    "semantic_hash": ""
+  },
+  "Assets/README.txt": {
+    "mtime": 1789484571.0928204,
+    "seen": 1789559718.353216,
+    "ast_hash": "ca3585de680376d63149000f2ae50061",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1789559670.5464535,
+    "seen": 1789559718.353216,
+    "ast_hash": "d10e2878e218d9f173fbc31d2d8e266c",
+    "semantic_hash": ""
+  },
+  "Tests/ANOMALY-ACCEPTANCE.md": {
+    "mtime": 1789482535.7009108,
+    "seen": 1789559718.353216,
+    "ast_hash": "e0e53b148bcbb4f6a9c9cf799a995c1f",
+    "semantic_hash": ""
+  },
+  "Docs/ConfigDialogExample.png": {
+    "mtime": 1787817228.0,
+    "seen": 1789559718.353216,
+    "ast_hash": "5298688f8d5cc8b4f4a03d18a449b596",
+    "semantic_hash": ""
+  }
+}

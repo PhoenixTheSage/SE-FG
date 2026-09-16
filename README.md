@@ -4,7 +4,7 @@ Pulsar client plugin that adds **open-source frame generation** to Space Enginee
 
 Official AMD FSR 3 Frame Generation (optical flow + frame-interpolation swapchain) targets DX12 and Vulkan. This plugin runs an SM 5.0 bidirectional-warp interpolator through **SharpDX** on the game's D3D11 device (same pattern as SE-DLSS helper shaders and NGX: C# talks to D3D11; DXBC is baked in the plugin). Then it issues an extra DXGI Present of the interpolated color.
 
-Settings live in the Pulsar plugin dialog. When [Anomaly Shader Framework](https://github.com/PhoenixTheSage/Anomaly) and [Rich HUD Master](https://steamcommunity.com/workshop/filedetails/?id=1965654081) are in the world, the same options appear under **Anomaly Shaders → FrameGen → Settings**. This plugin does not vendor a Rich HUD client.
+Settings live in the Pulsar plugin dialog. When [Anomaly Shader Framework](https://github.com/PhoenixTheSage/Anomaly) and [Rich HUD Master](https://steamcommunity.com/workshop/filedetails/?id=1965654081) are in the world, the same options appear under **Anomaly Shaders → FrameGen → Settings**, and a corner overlay shows game vs displayed FPS. This plugin does not vendor a Rich HUD client.
 
 ## Requirements
 
@@ -16,6 +16,7 @@ Settings live in the Pulsar plugin dialog. When [Anomaly Shader Framework](https
 Plugin config:
 
 - **Enabled** — insert one interpolated frame between presented frames
+- **Show FPS overlay** — corner game / displayed FPS when Anomaly and Rich HUD Master are loaded
 - **Show Status** — GPU, FrameGen context, generate counts, Anomaly velocity
 
 MSAA is incompatible with FrameGen.
@@ -24,7 +25,8 @@ Motion vectors are camera-reprojected from depth unless [Anomaly Shader Framewor
 
 - **Velocity** — `VelocityRegistry.Active` (object motion). Camera-from-depth remains the fallback.
 - **History** — `FrameTemporal.InvalidateHistory()` on camera cuts this plugin owns.
-- FrameGen does **not** call `ClaimUpscale`. AfterUpscale Display tenants keep the slot.
+- FrameGen does **not** call `ClaimUpscale` or `NotifyUpscaleComplete`. AfterUpscale Display tenants keep the slot. `hdrColor` / `reactiveMask` readers stay for a later upscaler handshake.
+- **Overlay** — `HudOverlayRegistry` corner line (`se-framegen`) when Master is registered.
 
 No compile-time Anomaly reference. FrameGen does not require an NVIDIA GPU; Anomaly itself does not either.
 
@@ -32,15 +34,15 @@ Optional [Rich HUD Master](https://steamcommunity.com/workshop/filedetails/?id=1
 
 ## How it runs
 
-`FrameGenD3d` creates a compute shader from baked DXBC (`FrameGen/Shaders/Interpolate.hlsl`, `fxc cs_5_0`) and dispatches it with SharpDX, the same way camera motion vectors use `Mv.hlsl`. Dilated motion, bidirectional warp to t=0.5, depth disocclusion, previous-color ping-pong. Pulsar / PluginHub compile the C# plugin only.
+`FrameGenD3d` creates a compute shader from baked DXBC (`FrameGen/Shaders/Interpolate.hlsl`, `fxc cs_5_0`) and dispatches it with SharpDX, the same way camera motion vectors use `Mv.hlsl`. Dilated motion, bidirectional warp to t=0.5, depth disocclusion, previous-color ping-pong. The interpolator reads the **scene** snapshot taken after `DrawScene` / CopyToRT (before `ConsumeMainSprites`) at the **DXGI swapchain** size. DLSS/FRS `SetDRS` makes `Backbuffer.Size` follow internal `ResolutionI`; FrameGen does not use that for UAV or Present size. Depth is sampled in UV so gbuffer (internal) still matches the upscaled color. After Keen `Present`, `Copy.hlsl` blits that interpolant through an sRGB RTV (sample-by-UV so a leftover internal UAV cannot leave a black pillar) and restores HUD pixels that differ from the scene copy. Do not `CopyResource` UNORM UAV color onto an `*_SRGB` backbuffer — that double-encodes and crushes midtones. The render thread does not spin-wait a half frame (that path halves game FPS and flashes the interpolant before the real frame). When the game already fills the monitor (native FPS approaching the display Hz), the extra Present is skipped — a second flip in that refresh queues the interpolant on top of the real frame and ghosts. Pulsar / PluginHub compile the C# plugin only.
 
-HUD and particles that lack motion vectors can ghost for one interpolated frame. Camera cuts reset history.
+HUD sprites are not warped. Keen's PostPP prefix is skipped only when that Harmony hook actually runs; Rich HUD is then drawn once after CopyToRT from the persistent snapshot (not merged with `BillboardsRead` clones). If the skip misses, FrameGen leaves Keen's pass alone so `UiBkOpacity` cannot stack. The extra present restores that already-composited HUD from the pixel copy. Particles drawn in the scene pass still follow scene motion vectors. Camera cuts reset history.
 
 ## Building
 
 - .NET Framework 4.8.1 targeting pack and .NET 10 SDK
 - Build `ClientPlugin` (deploys to Pulsar `Legacy\Local` or `Interim\Local`; close the game if the DLL is in use)
-- To regenerate interpolator DXBC after editing HLSL: `fxc /T cs_5_0 /E CSMain /O3` on `ClientPlugin/FrameGen/Shaders/Interpolate.hlsl`, then paste bytes into `ShaderBytecode.InterpolateCs`
+- To regenerate interpolator DXBC after editing HLSL: `fxc /T cs_5_0 /E CSMain /O3` on `ClientPlugin/FrameGen/Shaders/Interpolate.hlsl`, then paste bytes into `ShaderBytecode.InterpolateCs`. Composite blit: `fxc /T ps_5_0 /E PSMain` on `Copy.hlsl` → `ShaderBytecode.CopyPs`.
 
 Debug with Pulsar `Legacy.exe` / `Interim.exe` and `-sources`.
 
@@ -58,7 +60,7 @@ Overlap: Present timing and motion-vector consumption. Do not run FrameGen with 
 
 ### HdrRender
 
-FrameGen interpolates the presented backbuffer (post-tonemap / swapchain color). It does not evaluate `hdrColor` or occupy AfterUpscale.
+FrameGen interpolates the post-tonemap scene snapshot (swapchain color after `DrawScene`). It does not evaluate `hdrColor` or occupy AfterUpscale.
 
 ### SmoothFrames
 

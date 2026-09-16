@@ -15,6 +15,14 @@ internal static class RichHudOptions
         Save();
     }
 
+    public static bool GetShowOverlay() => Config.Current.ShowOverlay;
+
+    public static void SetShowOverlay(bool value)
+    {
+        Config.Current.ShowOverlay = value;
+        Save();
+    }
+
     public static void ShowStatus()
     {
         Config.ShowStatus();

@@ -13,12 +13,14 @@ public sealed class RichHudSession : MySessionComponentBase
     public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
     {
         AnomalyTerminalHook.TryInstall();
+        HudOverlayBind.TryInstall();
     }
 
     // Lobbies: pause does not tick BeforeSimulation in SP; Draw still runs.
     public override void Draw()
     {
         AnomalyTerminalHook.TryInstall();
+        HudOverlayBind.TryInstall();
         base.Draw();
     }
 

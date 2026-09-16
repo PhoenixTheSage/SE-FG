@@ -11,8 +11,8 @@ using VRage.Plugins;
 using VRage.Utils;
 
 #if !LOCAL_BUILD
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 #endif
 
 namespace ClientPlugin;
@@ -27,6 +27,7 @@ public sealed class Plugin : IPlugin
     private Harmony harmony;
     private Harmony deviceHarmony;
     private bool disposed;
+    private bool configUiDirty;
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     public void Init(object gameInstance)
@@ -39,6 +40,7 @@ public sealed class Plugin : IPlugin
         GpuSupport.TryProbe();
         AnomalyHook.Probe();
         AnomalyTerminalHook.TryInstall();
+        HudOverlayBind.TryInstall();
 
         harmony = new Harmony(Name);
         harmony.PatchAll(Assembly.GetExecutingAssembly());
@@ -46,8 +48,18 @@ public sealed class Plugin : IPlugin
         DeviceDisposePatch.Apply(deviceHarmony);
         AnomalyHook.Probe();
         AnomalyTerminalHook.TryInstall();
+        HudOverlayBind.TryInstall();
         MyLog.Default.WriteLine("FrameGen plugin initialized. GPU: " + GpuSupport.StatusLine);
         DebugLog.Write("Harmony patched, plugin initialized GPU=" + GpuSupport.StatusLine);
+    }
+
+    internal static void RefreshConfigUi()
+    {
+        AnomalyTerminalHook.TryRefresh();
+        var instance = Instance;
+        if (instance == null || instance.disposed)
+            return;
+        instance.configUiDirty = true;
     }
 
     public void Dispose()
@@ -65,6 +77,7 @@ public sealed class Plugin : IPlugin
         ConfigStorage.FlushPending(true);
         FrameGenRuntime.Shutdown();
         AnomalyTerminalHook.Reset();
+        HudOverlayBind.Reset();
         GpuSupport.Reset();
         settingsGenerator = null;
         if (ReferenceEquals(Instance, this))
@@ -77,8 +90,29 @@ public sealed class Plugin : IPlugin
         if (disposed)
             return;
         AnomalyTerminalHook.TryInstall();
+        HudOverlayBind.TryInstall();
+        FlushConfigUi();
         ConfigStorage.FlushPending();
         FrameGenRuntime.NotifyPluginsReady();
+    }
+
+    void FlushConfigUi()
+    {
+        if (!configUiDirty)
+            return;
+        configUiDirty = false;
+        var dialog = settingsGenerator?.Dialog;
+        if (dialog == null)
+            return;
+        try
+        {
+            if (dialog.State == MyGuiScreenState.OPENED)
+                dialog.RecreateControls(false);
+        }
+        catch
+        {
+            // Dialog not on the stack.
+        }
     }
 
     // ReSharper disable once UnusedMember.Global
@@ -98,14 +132,18 @@ public sealed class Plugin : IPlugin
     // ReSharper disable once UnusedMember.Global
     public void LoadAssets(IReadOnlyDictionary<string, string> assets)
     {
-        if (!disposed)
-            AnomalyTerminalHook.TryInstall();
+        if (disposed)
+            return;
+        AnomalyTerminalHook.TryInstall();
+        HudOverlayBind.TryInstall();
     }
 
     // ReSharper disable once UnusedMember.Global
     public void LoadAssets(string folder)
     {
-        if (!disposed)
-            AnomalyTerminalHook.TryInstall();
+        if (disposed)
+            return;
+        AnomalyTerminalHook.TryInstall();
+        HudOverlayBind.TryInstall();
     }
 }

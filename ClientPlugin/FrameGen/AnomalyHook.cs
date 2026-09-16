@@ -65,9 +65,6 @@ internal static class AnomalyHook
     private static bool _loggedConvention;
     private static bool _loggedSize;
     private static bool _loggedReactiveSize;
-    private static bool _loggedNotify;
-    private static bool _notifiedThisFrame;
-    private static bool _notifiedLastEvaluate;
     private static bool _usedReactiveThisFrame;
 
     public static bool RegistryFound
@@ -138,7 +135,6 @@ internal static class AnomalyHook
         {
             EnsureLoadHook();
             if (_activeProperty == null || _catalogActive == null ||
-                (_notifyUpscale == null && _notifyUpscale2 == null) ||
                 _invalidateHistory == null || _velocitySource == null)
                 ScanAssembliesUnlocked();
             SyncClaimUnlocked();
@@ -147,7 +143,8 @@ internal static class AnomalyHook
 
     /// <summary>
     /// Frame generation is not an upscaler. Always release AfterUpscale so a
-    /// Display tenant can <c>CompleteDisplayWithoutUpscale</c>.
+    /// Display tenant can <c>CompleteDisplayWithoutUpscale</c>. Do not notify
+    /// AfterUpscale complete — that belongs to a later DLSS/FRS handshake.
     /// </summary>
     public static void SyncUpscaleClaim()
     {
@@ -163,10 +160,7 @@ internal static class AnomalyHook
     public static void BeginFrame()
     {
         lock (Gate)
-        {
-            _notifiedThisFrame = false;
             _usedReactiveThisFrame = false;
-        }
     }
 
     public static void Reset()
@@ -205,12 +199,10 @@ internal static class AnomalyHook
             _registryAssembly = null;
             _loggedFound = _loggedMissing = _loggedUnavailable = false;
             _loggedConvention = _loggedSize = _loggedReactiveSize = false;
-            _loggedNotify = _notifiedThisFrame = _notifiedLastEvaluate = _usedReactiveThisFrame = false;
+            _usedReactiveThisFrame = false;
             _claimedUpscale = false;
         }
     }
-
-    public static void ClaimUpscale() => SyncUpscaleClaim();
 
     public static bool TryGetLive(int expectedWidth, int expectedHeight, out IntPtr native, out bool historyValid)
     {
@@ -305,58 +297,6 @@ internal static class AnomalyHook
 
         srv = color;
         return true;
-    }
-
-    public static void NotifyUpscaleComplete()
-    {
-        NotifyUpscaleComplete(null, null);
-    }
-
-    public static void NotifyUpscaleComplete(object renderContext, object color)
-    {
-        MethodInfo notify2;
-        MethodInfo notify;
-        lock (Gate)
-        {
-            if (_notifiedThisFrame)
-                return;
-            notify2 = _notifyUpscale2;
-            notify = _notifyUpscale;
-        }
-
-        if (notify2 == null && notify == null)
-        {
-            Probe();
-            lock (Gate)
-            {
-                notify2 = _notifyUpscale2;
-                notify = _notifyUpscale;
-            }
-            if (notify2 == null && notify == null)
-                return;
-        }
-
-        try
-        {
-            if (notify2 != null)
-                notify2.Invoke(null, new[] { renderContext, color });
-            else
-                notify.Invoke(null, notify.GetParameters().Length == 0 ? null : new[] { color ?? renderContext });
-            lock (Gate)
-            {
-                _notifiedThisFrame = true;
-                _notifiedLastEvaluate = true;
-                if (_loggedNotify)
-                    return;
-                _loggedNotify = true;
-            }
-
-            DebugLog.Write("Anomaly NotifyUpscaleComplete dest=" + (color != null ? "yes" : "none"));
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write("Anomaly NotifyUpscaleComplete: " + e.GetType().Name + ": " + e.Message);
-        }
     }
 
     public static void InvalidateHistory()
@@ -626,7 +566,6 @@ internal static class AnomalyHook
         {
             TryBindUnlocked(assembly);
             if (_activeProperty != null && _catalogActive != null &&
-                (_notifyUpscale != null || _notifyUpscale2 != null) &&
                 _invalidateHistory != null && _velocitySource != null)
                 return;
         }
@@ -768,26 +707,6 @@ internal static class AnomalyHook
     {
         // Frame generation is not an upscaler; never occupy AfterUpscale.
         TryReleaseUpscaleUnlocked();
-    }
-
-    private static void TryClaimUpscaleUnlocked()
-    {
-        if (_claimedUpscale || _claimUpscale == null)
-            return;
-        try
-        {
-            var ok = _claimUpscale.Invoke(null, new object[] { UpscaleId });
-            _claimedUpscale = ok is not false;
-            if (_claimedUpscale)
-            {
-                MyLog.Default.WriteLine("FrameGen: claimed Anomaly upscale slot '" + UpscaleId + "'");
-                DebugLog.Write("ClaimUpscale " + UpscaleId);
-            }
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write("ClaimUpscale: " + e.GetType().Name + ": " + e.Message);
-        }
     }
 
     private static void TryReleaseUpscaleUnlocked()
