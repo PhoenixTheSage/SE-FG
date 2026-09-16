@@ -1,6 +1,6 @@
 using System;
 using System.Reflection;
-using ClientPlugin.Dlss;
+using ClientPlugin.FrameGen;
 
 public static class Program
 {
@@ -62,10 +62,10 @@ public class ProbeConfig
     public int VelocityProbe { get; set; }
     public string VelocitySource => "GBuffer";
 }
-namespace ClientPlugin.Dlss
+namespace ClientPlugin.FrameGen
 {
     public static class DebugLog { public static void Write(string s) {} }
-    public static class DlssRuntime { public static string LastBindingEvidence; public static int InternalWidth=1280, InternalHeight=720; }
+    public static class FrameGenRuntime { public static string LastBindingEvidence; public static int Width=1280, Height=720; public static bool IsLive; }
 }
 namespace VRage.Utils
 {

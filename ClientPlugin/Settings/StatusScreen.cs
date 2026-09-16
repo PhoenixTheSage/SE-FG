@@ -42,7 +42,7 @@ internal sealed class StatusScreen : MyGuiScreenBase
         CloseButtonEnabled = true;
     }
 
-    public override string GetFriendlyName() => "DlssStatus";
+    public override string GetFriendlyName() => "FrameGenStatus";
 
     public override void LoadContent()
     {
@@ -53,7 +53,7 @@ internal sealed class StatusScreen : MyGuiScreenBase
     public override void RecreateControls(bool constructor)
     {
         base.RecreateControls(constructor);
-        AddCaption("DLSS Status");
+        AddCaption("FrameGen Status");
 
         var screenSize = Size ?? new Vector2(0.70f, 0.74f);
         var textSize = new Vector2(screenSize.X - 0.08f, screenSize.Y - TopInset - BottomInset);

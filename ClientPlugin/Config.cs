@@ -1,8 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.Xml.Serialization;
-using ClientPlugin.Dlss;
+using ClientPlugin.FrameGen;
 using ClientPlugin.Settings;
 using ClientPlugin.Settings.Elements;
 using Sandbox.Graphics.GUI;
@@ -13,93 +12,38 @@ public class Config : INotifyPropertyChanged
 {
     #region Options
 
-    private AntiAliasingChoice antiAliasing = AntiAliasingChoice.Off;
-    private DlssMode mode = DlssMode.Quality;
-    private DlssModel model = DlssModel.LatestModel;
-    private float sharpness = 0.5f;
+    private bool enabled = true;
 
     #endregion
 
     #region User interface
 
-    public readonly string Title = "DLSS";
+    public readonly string Title = "FrameGen";
 
-    internal static bool SuppressApply;
+    [Separator("Frame Generation")]
 
-    [Separator("Anti-aliasing")]
-
-    [Dropdown(visibleRows: 10, label: "Anti-aliasing",
-        description: "DLSS replaces FXAA; choose Off or FXAA to use the game's anti-aliasing.")]
-    public AntiAliasingChoice AntiAliasing
+    [Checkbox(label: "Enabled",
+        description: "Insert an interpolated frame between presented frames. Turn VSync off; extra Present waits a full refresh when it is on.")]
+    public bool Enabled
     {
-        get => antiAliasing;
-        set
-        {
-            if (value == AntiAliasingChoice.DLSS && GpuSupport.Probed && !GpuSupport.CanOfferDlss)
-                value = AntiAliasingChoice.Off;
-            SetField(ref antiAliasing, value);
-        }
-    }
-
-    [XmlIgnore]
-    public bool Enabled => antiAliasing == AntiAliasingChoice.DLSS;
-
-    // Old configs stored <Enabled>true</Enabled>. XmlSerializer still calls this setter.
-    [XmlElement("Enabled")]
-    [Browsable(false)]
-    public bool EnabledCompat
-    {
-        get => Enabled;
-        set
-        {
-            if (value)
-                AntiAliasing = AntiAliasingChoice.DLSS;
-            else if (antiAliasing == AntiAliasingChoice.DLSS)
-                AntiAliasing = AntiAliasingChoice.Off;
-        }
-    }
-
-    [Separator("DLSS Super Resolution")]
-
-    [Dropdown(
-        description: "Quality trades internal resolution against image quality. DLAA stays at native resolution.")]
-    public DlssMode Mode
-    {
-        get => mode;
-        set => SetField(ref mode, value);
-    }
-
-    [Dropdown(description: "DLSS model. Latest Model uses transformer K; CNN F is the legacy option. " +
-                           "NVIDIA App overrides do not apply to this unofficial title.")]
-    public DlssModel Model
-    {
-        get => model;
-        set => SetField(ref model, value);
-    }
-
-    [Slider(0f, 1f, 0.05f, label: "Sharpness",
-        description: "Optional sharpening; transformer models may ignore it.")]
-    public float Sharpness
-    {
-        get => sharpness;
-        set => SetField(ref sharpness, value);
+        get => enabled;
+        set => SetField(ref enabled, value);
     }
 
     [Separator("Status")]
 
-    [Button(label: "Show Status", description: "GPU, NGX support, resolutions, and Anomaly buffer status")]
+    [Button(label: "Show Status", description: "GPU, FrameGen context, and Anomaly velocity status")]
     // ReSharper disable once UnusedMember.Global
     public static void ShowStatus()
     {
         GpuSupport.TryProbe();
-        MyGuiSandbox.AddScreen(new StatusScreen(DlssStatus.CurrentText));
+        MyGuiSandbox.AddScreen(new StatusScreen(FrameGenStatus.CurrentText));
     }
 
     #endregion
 
     #region Property change notification boilerplate
 
-    // Property notifications can run while Current is still being initialized.
     public static readonly Config Default = new();
     public static readonly Config Current = ConfigStorage.Load();
 
@@ -108,15 +52,11 @@ public class Config : INotifyPropertyChanged
     protected virtual void OnPropertyChanged(string propertyName)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        if (propertyName == nameof(AntiAliasing) || propertyName == nameof(Mode) || propertyName == nameof(Model) ||
-            propertyName == nameof(Sharpness))
+        if (propertyName == nameof(Enabled))
         {
-            DebugLog.Write("config " + propertyName + " aa=" + antiAliasing + " mode=" + mode +
-                           " model=" + model + " sharpness=" + sharpness);
-            DlssRuntime.NotifyConfigChanged();
+            DebugLog.Write("config Enabled=" + enabled);
+            FrameGenRuntime.NotifyConfigChanged();
         }
-        if (propertyName == nameof(AntiAliasing) && !SuppressApply)
-            GameAntiAliasing.ApplyFromConfig();
     }
 
     private void SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = null)

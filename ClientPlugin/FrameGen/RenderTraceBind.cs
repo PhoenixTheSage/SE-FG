@@ -2,7 +2,7 @@ using System;
 using System.Reflection;
 using VRage.Utils;
 
-namespace ClientPlugin.Dlss;
+namespace ClientPlugin.FrameGen;
 
 /// <summary>
 /// Optional bind to Anomaly <c>ClientPlugin.ShaderFramework.RenderTrace</c>.
@@ -36,7 +36,7 @@ internal static class RenderTraceBind
     {
         try
         {
-            MyLog.Default.WriteLine("DLSS RenderTrace at " + where +
+            MyLog.Default.WriteLine("FrameGen RenderTrace at " + where +
                                     (e != null ? ": " + e.GetType().Name + ": " + e.Message : ""));
         }
         catch

@@ -1,6 +1,6 @@
 using System;
 using System.Reflection;
-using ClientPlugin.Dlss;
+using ClientPlugin.FrameGen;
 using VRage.Utils;
 
 namespace ClientPlugin.RichHud;
@@ -13,7 +13,7 @@ namespace ClientPlugin.RichHud;
 internal static class AnomalyTerminalHook
 {
     public const string RegistryTypeName = "ClientPlugin.RichHud.TerminalConfigRegistry";
-    public const string FolderTitle = "DLSS";
+    public const string FolderTitle = "FrameGen";
     public const string SettingsPage = "Settings";
     public const string PageTitle = FolderTitle;
 
@@ -42,7 +42,7 @@ internal static class AnomalyTerminalHook
 
             Populate(page);
             _installed = true;
-            MyLog.Default.WriteLine("DLSS: Rich HUD page under Anomaly Shaders / " + FolderTitle + " / " + SettingsPage);
+            MyLog.Default.WriteLine("FrameGen: Rich HUD page under Anomaly Shaders / " + FolderTitle + " / " + SettingsPage);
             DebugLog.Write("Anomaly TerminalConfigRegistry page " + PageTitle);
             return true;
         }
@@ -105,28 +105,14 @@ internal static class AnomalyTerminalHook
     static void Populate(object page)
     {
         var type = page.GetType();
-        Invoke(type, page, "Category", "DLSS");
-        Invoke(type, page, "Dropdown", "Anti-aliasing", typeof(AntiAliasingChoice),
-            (Func<object>)(() => RichHudOptions.GetAntiAliasing()),
-            (Action<object>)(v => RichHudOptions.SetAntiAliasing((AntiAliasingChoice)v)),
-            "DLSS replaces FXAA; choose Off or FXAA to use the game's anti-aliasing.");
-        Invoke(type, page, "Dropdown", "Mode", typeof(DlssMode),
-            (Func<object>)(() => RichHudOptions.GetMode()),
-            (Action<object>)(v => RichHudOptions.SetMode((DlssMode)v)),
-            "Quality trades internal resolution against image quality. DLAA stays at native resolution.");
-        Invoke(type, page, "Dropdown", "Model", typeof(DlssModel),
-            (Func<object>)(() => RichHudOptions.GetModel()),
-            (Action<object>)(v => RichHudOptions.SetModel((DlssModel)v)),
-            "DLSS model. Latest Model uses transformer K; CNN F is the legacy option. " +
-            "NVIDIA App overrides do not apply to this unofficial title.");
-        Invoke(type, page, "Slider", "Sharpness", 0f, 1f,
-            (Func<float>)RichHudOptions.GetSharpness,
-            (Action<float>)RichHudOptions.SetSharpness,
-            "Optional sharpening; transformer models may ignore it.",
-            0.05f);
+        Invoke(type, page, "Category", "Frame Generation");
+        Invoke(type, page, "Checkbox", "Enabled",
+            (Func<bool>)RichHudOptions.GetEnabled,
+            (Action<bool>)RichHudOptions.SetEnabled,
+            "Insert an interpolated frame between presented frames. Turn VSync off.");
         Invoke(type, page, "Button", "Show Status",
             (Action)RichHudOptions.ShowStatus,
-            "GPU, NGX support, resolutions, and Anomaly buffer status");
+            "GPU, FrameGen support, and Anomaly buffer status");
     }
 
     static void Invoke(Type type, object instance, string name, params object[] args)

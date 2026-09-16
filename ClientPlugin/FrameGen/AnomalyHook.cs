@@ -4,7 +4,7 @@ using System.Text;
 using VRage.Render11.Resources;
 using VRage.Utils;
 
-namespace ClientPlugin.Dlss;
+namespace ClientPlugin.FrameGen;
 
 /// <summary>
 /// Optional runtime binding to Anomaly Shader Framework. Resolves well-known
@@ -21,7 +21,7 @@ internal static class AnomalyHook
     public const string ReactiveMaskName = "reactiveMask";
     public const string VelocityName = "velocity";
     public const string HdrColorName = "hdrColor";
-    public const string UpscaleId = "se-dlss";
+    public const string UpscaleId = "se-framegen";
 
     // Matches Anomaly's VelocityConvention flags.
     public const int ConventionUnjittered = 1;
@@ -146,8 +146,8 @@ internal static class AnomalyHook
     }
 
     /// <summary>
-    /// Claim while DLSS is live; release otherwise so a Display tenant can
-    /// <c>CompleteDisplayWithoutUpscale</c> (HDR + FXAA / Off).
+    /// Frame generation is not an upscaler. Always release AfterUpscale so a
+    /// Display tenant can <c>CompleteDisplayWithoutUpscale</c>.
     /// </summary>
     public static void SyncUpscaleClaim()
     {
@@ -395,7 +395,7 @@ internal static class AnomalyHook
     {
         if (sb == null)
             return;
-        sb.AppendLine(DlssRuntime.LastBindingEvidence ?? "Motion vectors: no evaluate attempted");
+        sb.AppendLine(FrameGenRuntime.LastBindingEvidence ?? "Motion vectors: no evaluate attempted");
 
         AppendReactiveStatus(sb);
         AppendUpscaleStatus(sb);
@@ -422,8 +422,8 @@ internal static class AnomalyHook
             return;
         }
 
-        var sizeOk = DlssRuntime.InternalWidth <= 0 ||
-                     (width == DlssRuntime.InternalWidth && height == DlssRuntime.InternalHeight);
+        var sizeOk = FrameGenRuntime.Width <= 0 ||
+                     (width == FrameGenRuntime.Width && height == FrameGenRuntime.Height);
         sb.Append("Reactive mask: ");
         sb.Append(sizeOk ? "Anomaly " : "skipped (size mismatch) ");
         sb.Append(width).Append('x').Append(height);
@@ -446,15 +446,11 @@ internal static class AnomalyHook
             return;
         }
 
-        bool notified;
         bool claimed;
         lock (Gate)
-        {
-            notified = _notifiedLastEvaluate;
             claimed = _claimedUpscale;
-        }
 
-        sb.Append("AfterUpscale: ").Append(notified ? "notified" : "waiting");
+        sb.Append("AfterUpscale: unused (FrameGen is not an upscaler)");
         sb.Append(" · claim ").Append(claimed ? UpscaleId : "none");
         sb.Append(" · display ").AppendLine(HasDisplayTenant ? "yes" : "no");
     }
@@ -750,7 +746,7 @@ internal static class AnomalyHook
             return;
         _loggedFound = true;
         var name = _registryAssembly ?? assembly.GetName().Name;
-        MyLog.Default.WriteLine("DLSS: bound Anomaly types from " + name);
+        MyLog.Default.WriteLine("FrameGen: bound Anomaly types from " + name);
         DebugLog.Write("Anomaly types from " + assembly.FullName +
                        " velocity=" + (_activeProperty != null) +
                        " catalog=" + (_catalogActive != null) +
@@ -770,10 +766,8 @@ internal static class AnomalyHook
 
     private static void SyncClaimUnlocked()
     {
-        if (HasAnomalyBindingUnlocked() && DlssRuntime.IsLive)
-            TryClaimUpscaleUnlocked();
-        else
-            TryReleaseUpscaleUnlocked();
+        // Frame generation is not an upscaler; never occupy AfterUpscale.
+        TryReleaseUpscaleUnlocked();
     }
 
     private static void TryClaimUpscaleUnlocked()
@@ -786,7 +780,7 @@ internal static class AnomalyHook
             _claimedUpscale = ok is not false;
             if (_claimedUpscale)
             {
-                MyLog.Default.WriteLine("DLSS: claimed Anomaly upscale slot '" + UpscaleId + "'");
+                MyLog.Default.WriteLine("FrameGen: claimed Anomaly upscale slot '" + UpscaleId + "'");
                 DebugLog.Write("ClaimUpscale " + UpscaleId);
             }
         }
@@ -901,7 +895,7 @@ internal static class AnomalyHook
             return;
         _loggedConvention = true;
         MyLog.Default.Warning(
-            "DLSS: Anomaly velocity convention 0x" + convention.ToString("x") +
+            "FrameGen: Anomaly velocity convention 0x" + convention.ToString("x") +
             " rejected; required flags 0x" + ExpectedConvention.ToString("x"));
         DebugLog.Write("Anomaly convention 0x" + convention.ToString("x"));
     }
@@ -912,7 +906,7 @@ internal static class AnomalyHook
             return;
         _loggedSize = true;
         MyLog.Default.Warning(
-            "DLSS: Anomaly velocity size " + width + "x" + height +
+            "FrameGen: Anomaly velocity size " + width + "x" + height +
             " does not match internal " + expectedWidth + "x" + expectedHeight +
             "; using camera motion vectors.");
         DebugLog.Write("Anomaly size mismatch " + width + "x" + height +
@@ -925,7 +919,7 @@ internal static class AnomalyHook
             return;
         _loggedReactiveSize = true;
         MyLog.Default.Warning(
-            "DLSS: Anomaly reactiveMask size " + width + "x" + height +
+            "FrameGen: Anomaly reactiveMask size " + width + "x" + height +
             " does not match internal " + expectedWidth + "x" + expectedHeight +
             "; skipping bias mask.");
         DebugLog.Write("Anomaly reactive size mismatch " + width + "x" + height +

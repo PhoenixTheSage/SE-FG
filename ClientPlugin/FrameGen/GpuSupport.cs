@@ -1,12 +1,13 @@
 using System;
+using SharpDX.Direct3D;
 using SharpDX.Direct3D11;
 using VRage.Utils;
 using VRageRender;
 
-namespace ClientPlugin.Dlss;
+namespace ClientPlugin.FrameGen;
 
 /// <summary>
-/// Detects the game's D3D11 adapter before allowing NVIDIA NGX to load.
+/// Detects the game's D3D11 adapter. FrameGen is vendor-agnostic.
 /// </summary>
 public static class GpuSupport
 {
@@ -20,17 +21,20 @@ public static class GpuSupport
     public static string AdapterName { get; private set; } = "unknown";
     public static string VendorName { get; private set; } = "unknown";
     public static bool IsNvidia { get; private set; }
+    public static bool IsAmd { get; private set; }
+    public static bool IsWarp { get; private set; }
+    public static FeatureLevel FeatureLevel { get; private set; }
 
-    public static bool CanAttemptDlss => Probed && IsNvidia;
+    public static bool CanAttemptFrameGen => Probed && !IsWarp && FeatureLevel >= FeatureLevel.Level_11_0;
 
-    public static bool CanOfferDlss
+    public static bool CanOfferFrameGen
     {
         get
         {
             TryProbe();
-            if (Probed && !IsNvidia)
+            if (Probed && !CanAttemptFrameGen)
                 return false;
-            return !NgxHost.SupportKnown || NgxHost.IsSupported;
+            return !FrameGenHost.SupportKnown || FrameGenHost.IsSupported;
         }
     }
 
@@ -40,9 +44,11 @@ public static class GpuSupport
         {
             if (!Probed)
                 return "GPU has not been detected yet";
-            if (IsNvidia)
-                return null;
-            return "DLSS requires an NVIDIA GPU. Detected " + VendorName + " (" + AdapterName + ")";
+            if (IsWarp)
+                return "FrameGen cannot run on the Microsoft Basic Render Driver";
+            if (FeatureLevel < FeatureLevel.Level_11_0)
+                return "FrameGen requires Direct3D feature level 11_0 or newer";
+            return null;
         }
     }
 
@@ -52,7 +58,7 @@ public static class GpuSupport
         {
             if (!Probed)
                 return "not detected yet";
-            return VendorName + " " + AdapterName + " (0x" + VendorId.ToString("X4") + ")";
+            return VendorName + " " + AdapterName + " (0x" + VendorId.ToString("X4") + ", " + FeatureLevel + ")";
         }
     }
 
@@ -79,21 +85,25 @@ public static class GpuSupport
             AdapterName = string.IsNullOrEmpty(desc.Description) ? "unknown" : desc.Description.Trim();
             VendorName = NameForVendor(VendorId);
             IsNvidia = VendorId == VendorNvidia;
+            IsAmd = VendorId == VendorAmd;
+            IsWarp = VendorId == VendorMicrosoft;
+            FeatureLevel = device.FeatureLevel;
             Probed = true;
-            DebugLog.Write("GPU " + VendorName + " vendor=0x" + VendorId.ToString("X4") + " " + AdapterName);
-            if (!IsNvidia)
+            DebugLog.Write("GPU " + VendorName + " vendor=0x" + VendorId.ToString("X4") +
+                           " fl=" + FeatureLevel + " " + AdapterName);
+            var reason = UnsupportedReason;
+            if (reason != null)
             {
-                var reason = UnsupportedReason;
-                NgxHost.LastError = reason;
-                MyLog.Default.Warning("DLSS: " + reason);
-                DebugLog.Write("DLSS blocked: " + reason);
+                FrameGenHost.LastError = reason;
+                MyLog.Default.Warning("FrameGen: " + reason);
+                DebugLog.Write("FrameGen blocked: " + reason);
             }
             return true;
         }
         catch (Exception e)
         {
             var error = "GPU probe failed: " + e.GetType().Name + ": " + e.Message;
-            NgxHost.LastError = error;
+            FrameGenHost.LastError = error;
             DebugLog.Write(error);
             return false;
         }
@@ -106,6 +116,9 @@ public static class GpuSupport
         AdapterName = "unknown";
         VendorName = "unknown";
         IsNvidia = false;
+        IsAmd = false;
+        IsWarp = false;
+        FeatureLevel = 0;
     }
 
     internal static string NameForVendor(int vendorId)

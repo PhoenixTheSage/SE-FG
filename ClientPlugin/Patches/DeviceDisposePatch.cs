@@ -1,6 +1,6 @@
 using System;
 using System.Reflection;
-using ClientPlugin.Dlss;
+using ClientPlugin.FrameGen;
 using HarmonyLib;
 using SharpDX;
 using SharpDX.Direct3D11;
@@ -9,7 +9,7 @@ using VRage.Utils;
 namespace ClientPlugin.Patches;
 
 /// <summary>
-/// NGX must be shut down while the D3D11 device is still alive. Keen disposes
+/// FrameGen must be shut down while the D3D11 device is still alive. Keen disposes
 /// the device on the render thread; <see cref="Plugin.Dispose"/> is too late.
 /// Patched with a separate Harmony id and never removed: Pulsar only disposes
 /// plugins at process exit.
@@ -25,7 +25,7 @@ internal static class DeviceDisposePatch
             var dispose = FindParameterlessDispose();
             if (dispose == null)
             {
-                MyLog.Default.Warning("DLSS: could not find SharpDX DisposeBase.Dispose()");
+                MyLog.Default.Warning("FrameGen: could not find SharpDX DisposeBase.Dispose()");
                 return;
             }
             harmony.Patch(dispose, prefix: new HarmonyMethod(typeof(DeviceDisposePatch), nameof(Prefix))
@@ -35,7 +35,7 @@ internal static class DeviceDisposePatch
         }
         catch (Exception e)
         {
-            MyLog.Default.Error("DLSS failed to hook D3D device dispose: " + e);
+            MyLog.Default.Error("FrameGen failed to hook D3D device dispose: " + e);
         }
     }
 
@@ -59,6 +59,6 @@ internal static class DeviceDisposePatch
     {
         if (__instance is not Device device || device.IsDisposed)
             return;
-        NgxHost.OnDeviceDisposing(device);
+        FrameGenHost.OnDeviceDisposing(device);
     }
 }

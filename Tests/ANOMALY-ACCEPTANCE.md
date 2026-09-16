@@ -1,18 +1,14 @@
 # Anomaly consumption acceptance
 
-Contract checked September 6, 2026 against the adjacent Anomaly checkout:
-`wiki/Velocity-contract.md`, `Docs/DLSSMotionVectorIntegration.md`,
-`ClientPlugin/Velocity/IVelocityBuffer.cs`, `VelocityConvention.cs`, and `Config.cs`.
-These include local, uncommitted producer updates. GitHub fetches were unavailable;
-this is validation against the local update, not confirmation of a published release.
+Contract checked against the adjacent Anomaly checkout:
+`wiki/Velocity-contract.md`, `ClientPlugin/Velocity/IVelocityBuffer.cs`,
+`VelocityConvention.cs`, and `Config.cs`.
 
-The required convention is exactly 15: unjittered, internal pixel units, Y down,
-current-to-previous. `previousPixel = currentPixel + motion`. NGX scale is (+1,+1),
-MVLowRes is enabled and MVJittered disabled. Legacy 7 and unknown flags fall back.
-The catalog cannot certify conventions and is no longer a velocity fallback.
-VelocityProbe must be readable and Off. Missing probe metadata fails closed.
-Anomaly does not expose producer frame IDs or frame-latched probe state; freshness
-across a probe toggle cannot be proved from this API. Keep probes Off for captures.
+The required convention is exactly 15: unjittered, pixel units, Y down,
+current-to-previous. `previousPixel = currentPixel + motion`. FrameGen scale is
+(+1,+1). Legacy 7 and unknown flags fall back to camera-from-depth. The catalog
+cannot certify conventions and is no longer a velocity fallback. VelocityProbe
+must be readable and Off. Missing probe metadata fails closed.
 
 ## Automated contract checks
 
@@ -20,45 +16,28 @@ Run `dotnet run --project Tests/AnomalyAcceptance.csproj`.
 The harness links the production reflection consumer and reset policy. It checks
 conventions, all four current probes, unknown probe metadata, resize rejection,
 resource replacement, invalid history, unavailable/null buffers, cuts and source resets.
-It does not exercise D3D, NGX, or certify rendered image quality.
+It does not exercise D3D, FrameGen, or certify rendered image quality.
 
 ## In-game acceptance (pending)
 
-Use the same scene, DLSS mode, jitter settings and exposure for every comparison.
-Disable unrelated rendering plugins for the baseline. Record Anomaly revision,
-DLSS revision, GPU/driver, internal/output dimensions, and the Show Status binding
-snapshot. Use a GPU capture for consecutive-frame textures; debug colors are not
-numeric evidence. Test Anomaly GBuffer, Anomaly CameraOnly and local camera fallback.
+Use the same scene and exposure for every comparison. Disable unrelated
+rendering plugins for the baseline. Record Anomaly revision, FrameGen revision,
+GPU/driver, resolution, and the Show Status binding snapshot. Turn VSync off.
 
 1. **Reprojection:** capture stationary geometry, fixed-camera grids moving right
    and down, camera translation/rotation over static voxels, and characters.
-   For a tracked point moving +3 internal pixels horizontally, require MV=(-3,0).
-   Reproject with currentPixel+MV and compare to the previous unjittered position,
-   excluding disocclusions and depth-dilation boundaries. Proposed acceptance:
-   stationary median error <=0.1 pixel and tracked-point error <=0.5 pixel.
-   Check finite RG values and no unexplained one-frame spikes over 120 frames.
-   Camera-only paths cannot reproduce independent object motion; use that as a
-   control rather than expecting object reprojection to pass on those paths.
-2. **Ghosting:** capture at least 120 identical frames of moving grid edges,
-   characters and emissive/translucent content against a contrasting background.
-   Compare consecutive output frames and trails with GBuffer versus camera-only.
-   Require no persistent duplicate edge after motion stops and no regression on
-   static voxels; annotate disocclusion/reactive-mask limitations separately.
-   Save crops and frame indices; visual responsiveness alone is not a pass.
+   Convention 15: `previousPixel = currentPixel + motion`. A point that moved
+   +3 pixels right has motion `(-3, 0)`. Camera-only paths cannot reproduce
+   independent object motion; use that as a control.
+2. **Ghosting:** capture moving grid edges, characters, and HUD. HUD without
+   motion vectors can ghost for one interpolated frame; annotate that separately.
 3. **Camera cuts:** teleport and rotate abruptly. Require camera-cut or invalid-
-   history reset on the first evaluated post-cut frame, no old-scene history trail,
-   and steady frames returning to reset=none. Check AfterUpscale only on success.
-4. **Resolution:** change Quality/Performance/DLAA and window resolution repeatedly.
-   Require rejection of old-size buffers, a resolution/configuration/history reset,
-   then the new texture identity and matching internal dimensions at NGX. Confirm
-   no stretch-history artifact, crash, or disposal of the producer texture.
+   history reset on the first generated post-cut frame and no old-scene trail.
+4. **Resolution:** change window resolution. Require rejection of old-size buffers
+   and a history reset, then matching dimensions.
 5. **Source/probe changes:** switch GBuffer/CameraOnly/local fallback. Require a
-   source reset even when switching between Anomaly modes. Enable each probe and
-   verify explicit camera fallback; turn probes Off and allow producer history to
-   settle before numerical captures. Legacy flags 7 must never reach NGX.
+   source reset even when switching between Anomaly modes.
 
-Binding evidence reports a consumer render-frame counter, evaluate attempt,
-selected source, producer texture descriptor, actual NGX pointer and parameter
-readback, dimensions, scale, create flags, reset causes and NGX result. It is a
-snapshot of the last submission, not a promise the current registry still matches.
-Show Status is available in Release; Debug builds also sample evidence in the log.
+Binding evidence reports selected source, dimensions, reset causes and FrameGen
+result. Show Status is available in Release; Debug builds also sample evidence
+in `SpaceEngineersFrameGen.debug.log`.

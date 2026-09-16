@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
-using ClientPlugin.Dlss;
 using Sandbox.Graphics.GUI;
 
 namespace ClientPlugin.Settings.Elements;
@@ -38,29 +37,18 @@ internal class DropdownAttribute(
         var elements = Enum.GetNames(choiceEnum);
 
         for (var i = 0; i < elements.Length; i++)
-        {
-            if (choiceEnum == typeof(AntiAliasingChoice) &&
-                (AntiAliasingChoice)i == AntiAliasingChoice.DLSS &&
-                !GpuSupport.CanOfferDlss)
-                continue;
             dropdown.AddItem(i, UnCamelCase(elements[i]));
-        }
 
-        if (choiceEnum == typeof(AntiAliasingChoice))
-            GameAntiAliasing.BindPluginCombo(dropdown);
-        else
+        void OnItemSelect()
         {
-            void OnItemSelect()
-            {
-                var key = dropdown.GetSelectedKey();
-                var value = elements[key];
-                var enumValue = Enum.Parse(choiceEnum, value);
-                propertySetter(enumValue);
-            }
-
-            dropdown.ItemSelected += OnItemSelect;
-            dropdown.SelectItemByIndex(Convert.ToInt32(selectedEnum));
+            var key = dropdown.GetSelectedKey();
+            var value = elements[key];
+            var enumValue = Enum.Parse(choiceEnum, value);
+            propertySetter(enumValue);
         }
+
+        dropdown.ItemSelected += OnItemSelect;
+        dropdown.SelectItemByIndex(Convert.ToInt32(selectedEnum));
 
         var label = Tools.Tools.GetLabelOrDefault(name, Label);
         return

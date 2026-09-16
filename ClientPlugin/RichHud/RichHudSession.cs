@@ -4,7 +4,7 @@ using VRage.Game.Components;
 namespace ClientPlugin.RichHud;
 
 /// <summary>
-/// Queues the Anomaly Shaders / DLSS page. Safe when Anomaly or Master is absent.
+/// Queues the Anomaly Shaders / FrameGen page. Safe when Anomaly or Master is absent.
 /// Pulsar MyGui remains the settings UI. Do not vendor a Rich HUD client.
 /// </summary>
 [MySessionComponentDescriptor(MyUpdateOrder.NoUpdate)]

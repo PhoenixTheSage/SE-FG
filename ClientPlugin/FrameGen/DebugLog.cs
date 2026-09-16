@@ -8,7 +8,7 @@ using System.Text;
 using VRage.FileSystem;
 using VRage.Utils;
 
-namespace ClientPlugin.Dlss;
+namespace ClientPlugin.FrameGen;
 
 /// <summary>
 /// Writes a debug-only log beside SpaceEngineers.log; call sites are omitted from Release builds.
@@ -17,7 +17,7 @@ namespace ClientPlugin.Dlss;
 /// </summary>
 public static class DebugLog
 {
-    public const string FileName = "SpaceEngineersDLSS.debug.log";
+    public const string FileName = "SpaceEngineersFrameGen.debug.log";
     public const int HeartbeatSeconds = 5;
 
     public static string FilePath { get; private set; }
@@ -44,14 +44,14 @@ public static class DebugLog
                 {
                     AutoFlush = true
                 };
-                _writer.WriteLine("Space Engineers DLSS debug log");
+                _writer.WriteLine("Space Engineers FrameGen debug log");
                 _writer.WriteLine("opened {0:o}", DateTime.Now);
                 _writer.WriteLine("folder {0}", dir);
                 _writer.WriteLine("frame sites log first occurrence, then every {0}s", HeartbeatSeconds);
                 _writer.WriteLine();
                 try
                 {
-                    MyLog.Default.WriteLine("DLSS debug log: " + FilePath);
+                    MyLog.Default.WriteLine("FrameGen debug log: " + FilePath);
                 }
                 catch
                 {
@@ -64,7 +64,7 @@ public static class DebugLog
                 _writer = null;
                 try
                 {
-                    MyLog.Default.WriteLine("DLSS debug log failed to open: " + e.Message);
+                    MyLog.Default.WriteLine("FrameGen debug log failed to open: " + e.Message);
                 }
                 catch
                 {

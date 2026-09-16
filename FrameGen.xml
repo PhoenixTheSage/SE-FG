@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <PluginData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="GitHubPlugin">
 
-    <Id>B6469FEE-83BF-44A9-93F9-B4A252527C35</Id>
-    <RepoId>PhoenixTheSage/SE-DLSS</RepoId>
-    <FriendlyName>NVIDIA DLSS</FriendlyName>
+    <Id>737958D2-DAE2-4649-AC09-BAE1C7925E15</Id>
+    <RepoId>PhoenixTheSage/SE-FG</RepoId>
+    <FriendlyName>Frame Generation</FriendlyName>
     <Author>PhoenixTheSage</Author>
-    <Tooltip>Enables NVIDIA DLSS and DLAA 4.5</Tooltip>
+    <Tooltip>Enables Frame Generation</Tooltip>
     <Description>
-Adds NVIDIA DLSS and DLAA 4.5 in Space Engineers. NVIDIA RTX required.
+Adds Frame Generation in Space Engineers.
 
 Optional Anomaly Shader Framework supplies object motion to prevent ghosting.
 When Anomaly and Rich HUD Master are loaded, settings also appear under Anomaly Shaders.
@@ -18,11 +18,6 @@ Compat: Certain rendering mods may not play nice until they use Anomaly.
     <SourceDirectories>
         <Directory>ClientPlugin</Directory>
     </SourceDirectories>
-
-    <Asset Name="NvngxDlss"
-           Url="https://github.com/PhoenixTheSage/SE-DLSS/releases/download/nvngx-dlss-310.7.0/nvngx_dlss.dll"
-           Sha256="be6e434a94ca32499515eb62ca0e6c274526055d568d0426e4c652dcdfb6ee6e"
-           Placement="Bin" />
 
     <Platforms>Windows</Platforms>
 

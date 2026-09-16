@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace ClientPlugin.Dlss;
+namespace ClientPlugin.FrameGen;
 
 internal static class VelocityAcceptance
 {

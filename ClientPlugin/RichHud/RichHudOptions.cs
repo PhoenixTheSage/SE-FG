@@ -1,4 +1,3 @@
-using ClientPlugin.Dlss;
 using ClientPlugin.Settings;
 
 namespace ClientPlugin.RichHud;
@@ -8,35 +7,11 @@ namespace ClientPlugin.RichHud;
 /// </summary>
 internal static class RichHudOptions
 {
-    public static AntiAliasingChoice GetAntiAliasing() => Config.Current.AntiAliasing;
+    public static bool GetEnabled() => Config.Current.Enabled;
 
-    public static void SetAntiAliasing(AntiAliasingChoice value)
+    public static void SetEnabled(bool value)
     {
-        Config.Current.AntiAliasing = value;
-        Save();
-    }
-
-    public static DlssMode GetMode() => Config.Current.Mode;
-
-    public static void SetMode(DlssMode value)
-    {
-        Config.Current.Mode = value;
-        Save();
-    }
-
-    public static DlssModel GetModel() => Config.Current.Model;
-
-    public static void SetModel(DlssModel value)
-    {
-        Config.Current.Model = value;
-        Save();
-    }
-
-    public static float GetSharpness() => Config.Current.Sharpness;
-
-    public static void SetSharpness(float value)
-    {
-        Config.Current.Sharpness = value;
+        Config.Current.Enabled = value;
         Save();
     }
 
