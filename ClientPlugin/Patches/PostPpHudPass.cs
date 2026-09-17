@@ -79,18 +79,10 @@ internal static class PostPpHudPass
 
     public static bool ShouldSkipKeenPostPp()
     {
-        if (!FrameGenRuntime.ShouldInsertFrame)
-            return false;
-        if (!_skippedKeenPostPp)
-        {
-            if (!_loggedSkip)
-            {
-                _loggedSkip = true;
-                DebugLog.Write("skip Keen RenderPostPP; redraw PostPP once after CopyToRT");
-            }
-        }
-        _skippedKeenPostPp = true;
-        return true;
+        // Keen draws PostPP once. Skip+redraw stacked UiBkOpacity and the
+        // Pulsar/Rich HUD terminal. Scene may include HUD; Copy.hlsl restores
+        // unwarped HUD pixels from HudCopy after interpolate.
+        return false;
     }
 
     public static void PublishCompletedFrame()
@@ -179,68 +171,8 @@ internal static class PostPpHudPass
 
     public static void TryDrawAfterSceneBlit()
     {
-        if (!FrameGenRuntime.ShouldInsertFrame || _drewHudThisScene)
-            return;
-        // Only replace Keen's pass when the prefix actually skipped it.
-        // If the Harmony hook missed, Keen already blended bucket 4 — drawing
-        // again stacks UiBkOpacity. Do not guess from !_keenPostPpInvoked.
-        if (!_skippedKeenPostPp)
-            return;
-        if (!FrameGenRuntime.HaveSceneSnapshot)
-            return;
-
-        var rc = MyRender11.RC;
-        var device = MyRender11.DeviceInstance;
-        var backbuffer = MyRender11.Backbuffer?.Resource;
-        if (rc?.DeviceContext == null || device == null || backbuffer == null)
-            return;
-
-        var vw = FrameGenRuntime.Width > 0 ? FrameGenRuntime.Width : MyRender11.ResolutionI.X;
-        var vh = FrameGenRuntime.Height > 0 ? FrameGenRuntime.Height : MyRender11.ResolutionI.Y;
-
-        try
-        {
-            if (!EnsurePostPpBatches(rc))
-            {
-                FrameGenD3d.PresentSceneCopyToBackbuffer(rc.DeviceContext, backbuffer);
-                return;
-            }
-
-            // Seed HudCopy from the clean scene, blend PostPP once, then opaque
-            // replace the swapchain. Never alpha-blend onto a dirty backbuffer.
-            if (!FrameGenD3d.BeginHudCompose(device, rc.DeviceContext, vw, vh))
-                return;
-
-            _drawingPostPp = true;
-            try
-            {
-                rc.ComputeShader.SetUav(0, null);
-                rc.SetBlendState(MyBlendStateManager.BlendAlphaPremult);
-                rc.SetDepthStencilState(MyDepthStencilStateManager.IgnoreDepthStencil);
-                rc.SetViewport(0f, 0f, vw, vh);
-                MyBillboardRenderer.Render(
-                    rc, null, MyBillboardRenderer.m_bucketBatches[PostPpBucket], false, true);
-                _drewHudThisScene = true;
-            }
-            finally
-            {
-                _drawingPostPp = false;
-            }
-
-            FrameGenD3d.PresentHudCopyToBackbuffer(rc.DeviceContext, backbuffer);
-        }
-        catch (Exception e)
-        {
-            DebugLog.Write("TryDrawAfterSceneBlit: " + e.GetType().Name + ": " + e.Message);
-            try
-            {
-                FrameGenD3d.PresentSceneCopyToBackbuffer(rc.DeviceContext, backbuffer);
-            }
-            catch
-            {
-                // Device already torn down.
-            }
-        }
+        // Intentionally empty: Keen RenderPostPP owns Rich HUD. Redrawing
+        // after CopyToRT was the opacity stack.
     }
 
     static bool EnsurePostPpBatches(MyRenderContext rc)

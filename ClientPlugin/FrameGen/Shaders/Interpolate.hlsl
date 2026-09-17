@@ -9,8 +9,10 @@ cbuffer Constants : register(b0)
     uint Height;
     float InvWidth;
     float InvHeight;
-// MvScale converts Anomaly internal pixel delta to output pixels so
-// mvUv = mvInternal / velSize. Camera MVs generated at output size use 1,1.
+    // MvScale converts Anomaly internal pixel delta to output pixels so
+    // mvUv = mvInternal / velSize. Camera MVs generated at output size use 1,1.
+    float MvScaleX;
+    float MvScaleY;
     uint InvertedDepth;
     uint Pad;
 };
@@ -43,13 +45,13 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     int2 pixel = int2(id.xy);
     float4 currPx = CurrColor.Load(int3(pixel, 0));
     float2 uv = (float2(pixel) + 0.5) * float2(InvWidth, InvHeight);
-    // Center MV only. An 8-tap closest-depth dilate steals noisy edge
-    // vectors onto bolts and other high-frequency silhouettes.
-    float2 mvPx = MotionTex.SampleLevel(LinearClamp, uv, 0).xy * float2(MvScaleX, MvScaleY);
-    float mag = length(mvPx);
-    // Zero-motion 50/50 prev+curr is a double image of two rasters.
-    // Huge/NaN MVs are velocity-buffer garbage, not real travel.
-    if (mag < 1.25 || mag > 64.0 || any(isnan(mvPx)))
+    // Center MV only. Passthrough uses the motion-buffer texel magnitude so
+    // MvScale (DRS→output) cannot turn sub-pixel noise into a warp.
+    float2 mvNative = MotionTex.SampleLevel(LinearClamp, uv, 0).xy;
+    float2 mvPx = mvNative * float2(MvScaleX, MvScaleY);
+    float magNative = length(mvNative);
+    float magOut = length(mvPx);
+    if (magNative < 1.25 || magOut > 96.0 || any(isnan(mvPx)))
     {
         Output[pixel] = float4(currPx.rgb, 1.0);
         return;

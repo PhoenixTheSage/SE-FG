@@ -251,9 +251,9 @@ public static class FrameGenRuntime
     }
 
     /// <summary>
-    /// Snapshot 3D color from the backbuffer after <c>DrawScene</c> /
-    /// CopyToRT. Keen PostPP is skipped while live, so this is scene without
-    /// Rich HUD. Do not copy the in-flight LDR target from RenderPostPP.
+    /// Snapshot swapchain color after <c>DrawScene</c> / CopyToRT. Keen PostPP
+    /// has already blended Rich HUD (we do not skip+redraw). HudCopy at Present
+    /// plus Copy.hlsl keep HUD unwarped on the interpolant.
     /// </summary>
     public static void CaptureScene(Resource source = null)
     {
