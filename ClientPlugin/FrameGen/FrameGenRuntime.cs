@@ -37,6 +37,9 @@ public static class FrameGenRuntime
     private static readonly float[] PrevViewProj = new float[16];
     private static bool _haveInterp;
     private static bool _haveScene;
+    private static float _mvScaleX = 1f;
+    private static float _mvScaleY = 1f;
+    private static bool _hadExternalVelocity;
     private static readonly Stopwatch FpsClock = Stopwatch.StartNew();
     private static int _gamePresents;
     private static int _displayPresents;
@@ -64,6 +67,14 @@ public static class FrameGenRuntime
 
     public static bool IsLive => WantsFrameGen && FrameGenHost.IsReady && !MyRender11.MultisamplingEnabled;
 
+    /// <summary>
+    /// Skip Keen PostPP and extra-Present only while a generated frame will
+    /// actually be inserted. Refresh-cap / VSync still leave IsLive true, so
+    /// a HUD redraw on top of Keen's pass would stack UiBkOpacity.
+    /// </summary>
+    public static bool ShouldInsertFrame =>
+        IsLive && _consecutiveFails < 3 && GameSyncInterval() == 0 && !_refreshCapped;
+
     public static void NotifyPluginsReady()
     {
         if (_pluginsReady)
@@ -82,6 +93,8 @@ public static class FrameGenRuntime
         _haveInterp = false;
         _haveScene = false;
         _refreshCapped = false;
+        _mvScaleX = _mvScaleY = 1f;
+        _hadExternalVelocity = false;
         CameraHistory.Reset();
         AnomalyHook.InvalidateHistory();
         FrameGenHost.AllowRetry();
@@ -109,6 +122,8 @@ public static class FrameGenRuntime
         _refreshCapped = false;
         _cachedRefreshHz = 0;
         _refreshProbeTicks = 0;
+        _mvScaleX = _mvScaleY = 1f;
+        _hadExternalVelocity = false;
     }
 
     public static string GetOverlayText()
@@ -267,6 +282,8 @@ public static class FrameGenRuntime
         _haveScene = true;
     }
 
+    public static bool HaveSceneSnapshot => _haveScene && FrameGenD3d.SceneCopy != null;
+
     public static void CaptureSceneFallback()
     {
         if (_haveScene)
@@ -289,9 +306,18 @@ public static class FrameGenRuntime
             FrameGenHost.LastError = "Turn VSync off. Extra Present with VSync on waits a refresh and halves FPS.";
             return;
         }
+        var wasCapped = _refreshCapped;
         if (ShouldSkipExtraForRefresh())
         {
             LastPath = "refresh-cap";
+            _resetHistory = true;
+            return;
+        }
+        // DrawScene already used Keen HUD while capped. Interpolating this
+        // Present would warp that HUD; wait one frame for a clean snapshot.
+        if (wasCapped)
+        {
+            LastPath = "refresh-uncap";
             _resetHistory = true;
             return;
         }
@@ -331,18 +357,22 @@ public static class FrameGenRuntime
             var cameraCut = CameraHistory.ConsumeCameraCut();
             if (cameraCut)
                 AnomalyHook.InvalidateHistory();
+            var sourceChanged = UsedExternalVelocity != _hadExternalVelocity;
+            _hadExternalVelocity = UsedExternalVelocity;
             var resetReason = VelocityAcceptance.ResetReason(
                 _resetHistory, _configChanged, CameraHistory.HasPrevious,
-                mvec == IntPtr.Zero && !UsedExternalVelocity, false, cameraCut);
+                mvec == IntPtr.Zero && !UsedExternalVelocity, sourceChanged, cameraCut);
             var reset = resetReason == "none" ? 0 : 1;
             _configChanged = false;
             _resetHistory = false;
-            LastBindingEvidence = "Present source=" + (_lastVelocitySource ?? "none") + " reset=" + resetReason;
+            LastBindingEvidence = "Present source=" + (_lastVelocitySource ?? "none") +
+                                  " scale=" + _mvScaleX.ToString("0.###") + "," + _mvScaleY.ToString("0.###") +
+                                  " reset=" + resetReason;
 
             FrameGenD3d.UnbindPipeline(context);
             var code = FrameGenHost.Interpolate(
                 device, context, FrameGenD3d.SceneCopy, depth, mvec,
-                FrameGenD3d.InterpCopy, (uint)Width, (uint)Height, reset);
+                FrameGenD3d.InterpCopy, (uint)Width, (uint)Height, reset, _mvScaleX, _mvScaleY);
 
             if (code < 0)
             {
@@ -432,12 +462,18 @@ public static class FrameGenRuntime
     private static IntPtr ResolveMotion(Device device, DeviceContext context, Resource depth)
     {
         UsedExternalVelocity = false;
-        if (AnomalyHook.TryGetLive(Width, Height, out var externalMv, out _, out var srv))
+        _mvScaleX = 1f;
+        _mvScaleY = 1f;
+        if (AnomalyHook.TryGetLive(Width, Height, out var externalMv, out var historyValid, out var srv,
+                out var velW, out var velH) &&
+            historyValid && velW > 0 && velH > 0)
         {
             var known = (srv as ISrvBindable)?.Resource;
-            if (FrameGenD3d.ValidateVelocity(device, externalMv, Width, Height, out _, known))
+            if (FrameGenD3d.ValidateVelocity(device, externalMv, velW, velH, out _, known))
             {
                 UsedExternalVelocity = true;
+                _mvScaleX = Width / (float)velW;
+                _mvScaleY = Height / (float)velH;
                 _lastVelocitySource = "Anomaly/" + AnomalyHook.SelectedSource;
                 return externalMv;
             }

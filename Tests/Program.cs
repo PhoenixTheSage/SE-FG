@@ -30,7 +30,7 @@ public static class Program
         Assert(!Read(out ptr), "unknown probe rejected");
         Set("_velocityProbe", typeof(ProbeConfig).GetProperty("VelocityProbe"));
         buffer.Width = 960;
-        Assert(!Read(out ptr), "old dimensions rejected on resize");
+        Assert(Read(out ptr) && ptr == new IntPtr(123), "internal size accepted for UV scale");
         buffer.Width = 1280; buffer.NativeResource = new IntPtr(456);
         Assert(Read(out ptr) && ptr == new IntPtr(456), "fresh resource read after resize");
         buffer.HistoryValid = false;

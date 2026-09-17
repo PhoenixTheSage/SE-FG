@@ -104,7 +104,9 @@ public static class FrameGenHost
         Resource output,
         uint width,
         uint height,
-        int reset)
+        int reset,
+        float mvScaleX = 1f,
+        float mvScaleY = 1f)
     {
         if (!IsReady || device == null || context == null || color == null || output == null)
         {
@@ -115,7 +117,7 @@ public static class FrameGenHost
         var motion = FrameGenD3d.EnsureMotionOrZero(device, context, motionVectors, width, height);
         FrameGenD3d.UnbindPipeline(context);
         var code = FrameGenD3d.Interpolate(
-            device, context, color, depth, motion, output, width, height, reset);
+            device, context, color, depth, motion, output, width, height, reset, mvScaleX, mvScaleY);
         return code;
     }
 

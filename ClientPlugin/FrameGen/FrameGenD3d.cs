@@ -28,6 +28,7 @@ internal static class FrameGenD3d
     private static Texture2D _interpCopy;
     private static Texture2D _sceneCopy;
     private static Texture2D _hudCopy;
+    private static RenderTargetView _hudCopyRtv;
     private static uint _copyW;
     private static uint _copyH;
     private static Format _copyFmt = Format.Unknown;
@@ -168,6 +169,11 @@ internal static class FrameGenD3d
             _interpCopy = new Texture2D(device, td);
             _sceneCopy = new Texture2D(device, td);
             _hudCopy = new Texture2D(device, td);
+            if (!TryCreateHudCopyRtv(device))
+            {
+                ReleaseCopies();
+                return false;
+            }
             _copyW = (uint)desc.Width;
             _copyH = (uint)desc.Height;
             _copyFmt = desc.Format;
@@ -194,6 +200,69 @@ internal static class FrameGenD3d
         context.CopyResource(source, dest);
     }
 
+    /// <summary>
+    /// Seed HudCopy from the clean scene snapshot, then bind it as the PostPP
+    /// destination. Callers blend HUD once here and <see cref="PresentHudCopyToBackbuffer"/>
+    /// replaces the swapchain — never alpha-blend PostPP onto a dirty backbuffer.
+    /// </summary>
+    internal static bool BeginHudCompose(Device device, DeviceContext context, int width, int height)
+    {
+        if (device == null || context == null || _sceneCopy == null || _hudCopy == null || _hudCopyRtv == null)
+            return false;
+        if (width <= 0 || height <= 0)
+            return false;
+        UnbindPipeline(context);
+        context.CopyResource(_sceneCopy, _hudCopy);
+        context.OutputMerger.SetTargets(_hudCopyRtv);
+        context.Rasterizer.SetViewport(0, 0, width, height, 0f, 1f);
+        return true;
+    }
+
+    internal static void PresentHudCopyToBackbuffer(DeviceContext context, Resource backbuffer)
+    {
+        if (context == null || backbuffer == null || _hudCopy == null)
+            return;
+        UnbindPipeline(context);
+        context.CopyResource(_hudCopy, backbuffer);
+    }
+
+    internal static void PresentSceneCopyToBackbuffer(DeviceContext context, Resource backbuffer)
+    {
+        if (context == null || backbuffer == null || _sceneCopy == null)
+            return;
+        UnbindPipeline(context);
+        context.CopyResource(_sceneCopy, backbuffer);
+    }
+
+    private static bool TryCreateHudCopyRtv(Device device)
+    {
+        DisposeView(ref _hudCopyRtv);
+        if (device == null || _hudCopy == null)
+            return false;
+        try
+        {
+            _hudCopyRtv = new RenderTargetView(device, _hudCopy);
+            return true;
+        }
+        catch
+        {
+            try
+            {
+                _hudCopyRtv = new RenderTargetView(device, _hudCopy, new RenderTargetViewDescription
+                {
+                    Format = _hudCopy.Description.Format,
+                    Dimension = RenderTargetViewDimension.Texture2D
+                });
+                return true;
+            }
+            catch (Exception e)
+            {
+                FrameGenHost.SetError("failed to create HudCopy RTV: " + e.GetType().Name);
+                return false;
+            }
+        }
+    }
+
     internal static int Interpolate(
         Device device,
         DeviceContext context,
@@ -203,7 +272,9 @@ internal static class FrameGenD3d
         Resource output,
         uint width,
         uint height,
-        int reset)
+        int reset,
+        float mvScaleX = 1f,
+        float mvScaleY = 1f)
     {
         if (device == null || context == null || color == null || output == null || width == 0 || height == 0)
         {
@@ -254,7 +325,7 @@ internal static class FrameGenD3d
                 return -5;
             }
 
-            FillInterpolateConstantBuffer(width, height, 1f, 1f, invertedDepth: 1);
+            FillInterpolateConstantBuffer(width, height, mvScaleX, mvScaleY, invertedDepth: 1);
             var mapped = context.MapSubresource(_csCb, 0, MapMode.WriteDiscard, SharpDX.Direct3D11.MapFlags.None);
             Marshal.Copy(CsCbScratch, 0, mapped.DataPointer, InterpolateConstantBufferSize);
             context.UnmapSubresource(_csCb, 0);
@@ -854,6 +925,7 @@ internal static class FrameGenD3d
 
     private static void ReleaseCopies()
     {
+        DisposeView(ref _hudCopyRtv);
         DisposeView(ref _currCopy);
         DisposeView(ref _interpCopy);
         DisposeView(ref _sceneCopy);

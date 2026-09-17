@@ -4,7 +4,6 @@ using System.Threading;
 using ClientPlugin.FrameGen;
 using HarmonyLib;
 using Sandbox.Game.World;
-using SharpDX.Direct3D11;
 using VRage.Game;
 using VRage.Render11.RenderContext;
 using VRage.Render11.Resources;
@@ -15,7 +14,8 @@ namespace ClientPlugin.Patches;
 
 /// <summary>
 /// Skip Keen PostPP HUD into the scene color, freeze Rich HUD in layout
-/// view space, and draw it onto the backbuffer parented to the render camera.
+/// view space, and composite it once onto HudCopy (seeded from the clean
+/// scene snapshot) before opaque-replacing the backbuffer.
 /// Same camera lock as SE-DLSS <c>PostPpHudSpace</c>; no DRS/jitter path.
 /// </summary>
 internal static class PostPpHudPass
@@ -79,7 +79,7 @@ internal static class PostPpHudPass
 
     public static bool ShouldSkipKeenPostPp()
     {
-        if (!FrameGenRuntime.IsLive)
+        if (!FrameGenRuntime.ShouldInsertFrame)
             return false;
         if (!_skippedKeenPostPp)
         {
@@ -179,56 +179,68 @@ internal static class PostPpHudPass
 
     public static void TryDrawAfterSceneBlit()
     {
-        if (!FrameGenRuntime.IsLive || _drewHudThisScene)
+        if (!FrameGenRuntime.ShouldInsertFrame || _drewHudThisScene)
             return;
         // Only replace Keen's pass when the prefix actually skipped it.
         // If the Harmony hook missed, Keen already blended bucket 4 — drawing
         // again stacks UiBkOpacity. Do not guess from !_keenPostPpInvoked.
         if (!_skippedKeenPostPp)
             return;
-        var dest = UnwrapHudTarget(MyRender11.Backbuffer);
-        var rc = MyRender11.RC;
-        if (dest == null || rc == null)
+        if (!FrameGenRuntime.HaveSceneSnapshot)
             return;
-        TryDrawOnto(rc, dest);
-    }
 
-    static bool TryDrawOnto(MyRenderContext rc, IRtvBindable dest)
-    {
-        if (_drawingPostPp || rc == null || dest == null)
-            return true;
-        if (!EnsurePostPpBatches(rc))
-            return true;
-        if (dest.Rtv == null)
-            return true;
+        var rc = MyRender11.RC;
+        var device = MyRender11.DeviceInstance;
+        var backbuffer = MyRender11.Backbuffer?.Resource;
+        if (rc?.DeviceContext == null || device == null || backbuffer == null)
+            return;
 
-        _drawingPostPp = true;
+        var vw = FrameGenRuntime.Width > 0 ? FrameGenRuntime.Width : MyRender11.ResolutionI.X;
+        var vh = FrameGenRuntime.Height > 0 ? FrameGenRuntime.Height : MyRender11.ResolutionI.Y;
+
         try
         {
-            rc.ComputeShader.SetUav(0, null);
-            rc.SetBlendState(MyBlendStateManager.BlendAlphaPremult);
-            rc.SetDepthStencilState(MyDepthStencilStateManager.IgnoreDepthStencil);
-            BindHudRtv(rc, dest);
-            var vw = FrameGenRuntime.Width > 0 ? FrameGenRuntime.Width : dest.Size.X;
-            var vh = FrameGenRuntime.Height > 0 ? FrameGenRuntime.Height : dest.Size.Y;
-            rc.SetViewport(0f, 0f, vw, vh);
+            if (!EnsurePostPpBatches(rc))
+            {
+                FrameGenD3d.PresentSceneCopyToBackbuffer(rc.DeviceContext, backbuffer);
+                return;
+            }
+
+            // Seed HudCopy from the clean scene, blend PostPP once, then opaque
+            // replace the swapchain. Never alpha-blend onto a dirty backbuffer.
+            if (!FrameGenD3d.BeginHudCompose(device, rc.DeviceContext, vw, vh))
+                return;
+
+            _drawingPostPp = true;
             try
             {
+                rc.ComputeShader.SetUav(0, null);
+                rc.SetBlendState(MyBlendStateManager.BlendAlphaPremult);
+                rc.SetDepthStencilState(MyDepthStencilStateManager.IgnoreDepthStencil);
+                rc.SetViewport(0f, 0f, vw, vh);
                 MyBillboardRenderer.Render(
                     rc, null, MyBillboardRenderer.m_bucketBatches[PostPpBucket], false, true);
                 _drewHudThisScene = true;
             }
             finally
             {
-                rc.SetRtvNull();
+                _drawingPostPp = false;
+            }
+
+            FrameGenD3d.PresentHudCopyToBackbuffer(rc.DeviceContext, backbuffer);
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write("TryDrawAfterSceneBlit: " + e.GetType().Name + ": " + e.Message);
+            try
+            {
+                FrameGenD3d.PresentSceneCopyToBackbuffer(rc.DeviceContext, backbuffer);
+            }
+            catch
+            {
+                // Device already torn down.
             }
         }
-        finally
-        {
-            _drawingPostPp = false;
-        }
-
-        return true;
     }
 
     static bool EnsurePostPpBatches(MyRenderContext rc)
@@ -302,23 +314,6 @@ internal static class PostPpHudPass
         }
 
         return Snapshot.Count > 0;
-    }
-
-    static IRtvBindable UnwrapHudTarget(IRtvBindable target)
-    {
-        if (target is ICustomTexture custom)
-            return custom.SRgb ?? custom.Linear ?? target;
-        return target;
-    }
-
-    static void BindHudRtv(MyRenderContext rc, IRtvBindable target)
-    {
-        rc.ResetTargets();
-        var rtv = target?.Rtv;
-        if (rtv != null && rc.DeviceContext != null)
-            rc.DeviceContext.OutputMerger.SetTargets((DepthStencilView)null, 1, new[] { rtv });
-        if (target != null)
-            rc.SetRtv(target);
     }
 
     static bool HudSnapshotIsStaleLocked()

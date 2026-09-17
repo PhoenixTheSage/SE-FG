@@ -9,8 +9,8 @@ cbuffer Constants : register(b0)
     uint Height;
     float InvWidth;
     float InvHeight;
-    float MvScaleX;
-    float MvScaleY;
+// MvScale converts Anomaly internal pixel delta to output pixels so
+// mvUv = mvInternal / velSize. Camera MVs generated at output size use 1,1.
     uint InvertedDepth;
     uint Pad;
 };
@@ -22,34 +22,9 @@ Texture2D MotionTex : register(t3);
 SamplerState LinearClamp : register(s0);
 RWTexture2D<float4> Output : register(u0);
 
-static const int2 kOff[8] =
-{
-    int2(1, 0), int2(-1, 0), int2(0, 1), int2(0, -1),
-    int2(1, 1), int2(-1, 1), int2(1, -1), int2(-1, -1)
-};
-
 float DepthAtUv(float2 uv)
 {
     return DepthTex.SampleLevel(LinearClamp, saturate(uv), 0).r;
-}
-
-float2 DilateMotion(float2 uv)
-{
-    float best = DepthAtUv(uv);
-    float2 bestUv = uv;
-    [unroll]
-    for (int i = 0; i < 8; i++)
-    {
-        float2 p = uv + float2(kOff[i]) * float2(InvWidth, InvHeight);
-        float d = DepthAtUv(p);
-        bool nearer = InvertedDepth ? (d > best) : (d < best);
-        if (nearer)
-        {
-            best = d;
-            bestUv = p;
-        }
-    }
-    return MotionTex.SampleLevel(LinearClamp, saturate(bestUv), 0).xy;
 }
 
 float DepthDisocclude(float sampleDepth, float centerDepth)
@@ -66,31 +41,35 @@ void CSMain(uint3 id : SV_DispatchThreadID)
         return;
 
     int2 pixel = int2(id.xy);
+    float4 currPx = CurrColor.Load(int3(pixel, 0));
     float2 uv = (float2(pixel) + 0.5) * float2(InvWidth, InvHeight);
-    float2 mvPx = DilateMotion(uv) * float2(MvScaleX, MvScaleY);
-    float2 mvUv = mvPx * float2(InvWidth, InvHeight);
+    // Center MV only. An 8-tap closest-depth dilate steals noisy edge
+    // vectors onto bolts and other high-frequency silhouettes.
+    float2 mvPx = MotionTex.SampleLevel(LinearClamp, uv, 0).xy * float2(MvScaleX, MvScaleY);
+    float mag = length(mvPx);
+    // Zero-motion 50/50 prev+curr is a double image of two rasters.
+    // Huge/NaN MVs are velocity-buffer garbage, not real travel.
+    if (mag < 1.25 || mag > 64.0 || any(isnan(mvPx)))
+    {
+        Output[pixel] = float4(currPx.rgb, 1.0);
+        return;
+    }
 
+    float2 mvUv = mvPx * float2(InvWidth, InvHeight);
     float2 uvPrev = uv + 0.5 * mvUv;
     float2 uvCurr = uv - 0.5 * mvUv;
 
-    float4 prev = PrevColor.SampleLevel(LinearClamp, uvPrev, 0);
-    float4 curr = CurrColor.SampleLevel(LinearClamp, uvCurr, 0);
+    float4 prev = PrevColor.SampleLevel(LinearClamp, saturate(uvPrev), 0);
+    float4 curr = CurrColor.SampleLevel(LinearClamp, saturate(uvCurr), 0);
     float centerDepth = DepthAtUv(uv);
 
     float wPrev = DepthDisocclude(DepthAtUv(uvPrev), centerDepth);
     float wCurr = DepthDisocclude(DepthAtUv(uvCurr), centerDepth);
-
-    bool prevIn = all(uvPrev >= 0.0) && all(uvPrev <= 1.0);
-    bool currIn = all(uvCurr >= 0.0) && all(uvCurr <= 1.0);
-    wPrev *= prevIn ? 1.0 : 0.0;
-    wCurr *= currIn ? 1.0 : 0.0;
+    wPrev *= all(uvPrev >= 0.0) && all(uvPrev <= 1.0) ? 1.0 : 0.0;
+    wCurr *= all(uvCurr >= 0.0) && all(uvCurr <= 1.0) ? 1.0 : 0.0;
+    wCurr = max(wCurr, 0.35);
 
     float sum = wPrev + wCurr;
-    float4 mixed;
-    if (sum < 1e-3)
-        mixed = CurrColor.Load(int3(pixel, 0));
-    else
-        mixed = (prev * wPrev + curr * wCurr) / sum;
-
+    float4 mixed = sum < 1e-3 ? currPx : (prev * wPrev + curr * wCurr) / sum;
     Output[pixel] = float4(mixed.rgb, 1.0);
 }

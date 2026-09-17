@@ -206,15 +206,23 @@ internal static class AnomalyHook
 
     public static bool TryGetLive(int expectedWidth, int expectedHeight, out IntPtr native, out bool historyValid)
     {
-        return TryGetLive(expectedWidth, expectedHeight, out native, out historyValid, out _);
+        return TryGetLive(expectedWidth, expectedHeight, out native, out historyValid, out _, out _, out _);
     }
 
     public static bool TryGetLive(int expectedWidth, int expectedHeight, out IntPtr native, out bool historyValid,
         out object srv)
     {
+        return TryGetLive(expectedWidth, expectedHeight, out native, out historyValid, out srv, out _, out _);
+    }
+
+    public static bool TryGetLive(int expectedWidth, int expectedHeight, out IntPtr native, out bool historyValid,
+        out object srv, out int velWidth, out int velHeight)
+    {
         native = IntPtr.Zero;
         historyValid = false;
         srv = null;
+        velWidth = 0;
+        velHeight = 0;
         SelectionReason = "unavailable or unreadable velocity";
         SelectedSource = null;
         if (!TryReadVelocity(out var available, out var resource, out var width, out var height,
@@ -245,15 +253,19 @@ internal static class AnomalyHook
             return false;
         }
 
-        if (expectedWidth <= 0 || expectedHeight <= 0 ||
-            width != expectedWidth || height != expectedHeight)
+        if (width <= 0 || height <= 0)
         {
-            SelectionReason = "velocity size mismatch";
-            LogSizeOnce(width, height, expectedWidth, expectedHeight);
+            SelectionReason = "velocity size invalid";
             return false;
         }
 
+        if (expectedWidth > 0 && expectedHeight > 0 &&
+            (width != expectedWidth || height != expectedHeight))
+            LogSizeOnce(width, height, expectedWidth, expectedHeight);
+
         native = resource;
+        velWidth = width;
+        velHeight = height;
         SelectedSource = ReadVelocitySource() ?? "unknown producer";
         SelectionReason = "accepted";
         return true;
@@ -824,11 +836,11 @@ internal static class AnomalyHook
         if (_loggedSize)
             return;
         _loggedSize = true;
-        MyLog.Default.Warning(
-            "FrameGen: Anomaly velocity size " + width + "x" + height +
-            " does not match internal " + expectedWidth + "x" + expectedHeight +
-            "; using camera motion vectors.");
-        DebugLog.Write("Anomaly size mismatch " + width + "x" + height +
+        MyLog.Default.WriteLine(
+            "FrameGen: Anomaly velocity " + width + "x" + height +
+            " vs output " + expectedWidth + "x" + expectedHeight +
+            "; UV-sample and scale pixel delta by buffer size.");
+        DebugLog.Write("Anomaly size scale " + width + "x" + height +
                        " vs " + expectedWidth + "x" + expectedHeight);
     }
 
