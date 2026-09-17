@@ -13,9 +13,8 @@ using VRageRender;
 namespace ClientPlugin.Patches;
 
 /// <summary>
-/// Skip Keen PostPP HUD into the scene color, freeze Rich HUD in layout
-/// view space, and composite it once onto HudCopy (seeded from the clean
-/// scene snapshot) before opaque-replacing the backbuffer.
+/// Freeze Rich HUD billboards in layout view space for Copy.hlsl restore.
+/// Keen always draws PostPP (no skip+redraw — that stacked UiBkOpacity).
 /// Same camera lock as SE-DLSS <c>PostPpHudSpace</c>; no DRS/jitter path.
 /// </summary>
 internal static class PostPpHudPass
@@ -26,9 +25,6 @@ internal static class PostPpHudPass
     [ThreadStatic]
     static bool _drawingPostPp;
 
-    static bool _drewHudThisScene;
-    static bool _skippedKeenPostPp;
-    static bool _loggedSkip;
     static readonly object SnapshotLock = new();
     static readonly List<MyBillboard> PendingAdds = new(512);
     static readonly List<MyBillboard> UniqueScratch = new(512);
@@ -45,21 +41,15 @@ internal static class PostPpHudPass
 
     public static void BeginDraw()
     {
-        _drewHudThisScene = false;
-        _skippedKeenPostPp = false;
     }
 
     public static void PrepareNextPresent()
     {
-        _drewHudThisScene = false;
     }
 
     public static void Reset()
     {
         _drawingPostPp = false;
-        _drewHudThisScene = false;
-        _skippedKeenPostPp = false;
-        _loggedSkip = false;
         _walkingPersistents = 0;
         _publishing = false;
         lock (SnapshotLock)
@@ -432,7 +422,8 @@ internal static class BillboardPostPpPatch
     {
         _ = rc;
         _ = depthRead;
-        _ = target;
+        // Snapshot LDR before Keen blends Rich HUD so SceneCopy stays clean.
+        FrameGenRuntime.CapturePrePostPp(target);
         return !PostPpHudPass.ShouldSkipKeenPostPp();
     }
 }

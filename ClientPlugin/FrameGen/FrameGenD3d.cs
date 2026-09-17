@@ -33,8 +33,10 @@ internal static class FrameGenD3d
     private static uint _copyH;
     private static Format _copyFmt = Format.Unknown;
     private static PixelShader _blitPs;
+    private static PixelShader _stretchPs;
     private static Buffer _blitCb;
     private static SamplerState _blitSampler;
+    private static SamplerState _stretchSampler;
     private static ShaderResourceView _uavSrv;
     private static readonly byte[] BlitCbScratch = new byte[16];
 
@@ -198,6 +200,109 @@ internal static class FrameGenD3d
             return;
         UnbindPipeline(context);
         context.CopyResource(source, dest);
+    }
+
+    /// <summary>
+    /// Copy or UV-stretch <paramref name="source"/> into SceneCopy (swapchain-sized).
+    /// Used for pre-PostPP LDR capture when the Keen target may be DRS-sized.
+    /// </summary>
+    internal static bool CopyOrStretchToScene(Device device, DeviceContext context, Resource source)
+    {
+        if (device == null || context == null || source == null || _sceneCopy == null)
+            return false;
+        if (!TryGetTexture2D(source, out var srcTex))
+            return false;
+
+        var srcDesc = srcTex.Description;
+        var dstDesc = _sceneCopy.Description;
+        UnbindPipeline(context);
+        if (srcDesc.Width == dstDesc.Width &&
+            srcDesc.Height == dstDesc.Height &&
+            srcDesc.Format == dstDesc.Format)
+        {
+            context.CopyResource(source, _sceneCopy);
+            return true;
+        }
+
+        return StretchToScene(device, context, source, srcDesc);
+    }
+
+    private static bool StretchToScene(
+        Device device, DeviceContext context, Resource source, Texture2DDescription srcDesc)
+    {
+        if (!EnsureStretchPipeline(device))
+            return false;
+
+        ShaderResourceView srv = null;
+        RenderTargetView rtv = null;
+        try
+        {
+            if (!TryCreateColorSrv(device, source, srcDesc.Format, out srv))
+                return false;
+            try
+            {
+                rtv = new RenderTargetView(device, _sceneCopy);
+            }
+            catch
+            {
+                rtv = new RenderTargetView(device, _sceneCopy, new RenderTargetViewDescription
+                {
+                    Format = _sceneCopy.Description.Format,
+                    Dimension = RenderTargetViewDimension.Texture2D
+                });
+            }
+
+            UnbindPipeline(context);
+            context.OutputMerger.BlendState = null;
+            context.OutputMerger.DepthStencilState = null;
+            context.Rasterizer.SetViewport(
+                0, 0, _sceneCopy.Description.Width, _sceneCopy.Description.Height, 0f, 1f);
+            context.InputAssembler.InputLayout = null;
+            context.InputAssembler.PrimitiveTopology = SharpDX.Direct3D.PrimitiveTopology.TriangleList;
+            context.VertexShader.Set(_mvVs);
+            context.PixelShader.Set(_stretchPs);
+            context.PixelShader.SetSampler(0, _stretchSampler);
+            context.PixelShader.SetShaderResource(0, srv);
+            context.OutputMerger.SetTargets(rtv);
+            context.Draw(3, 0);
+            UnbindPipeline(context);
+            return true;
+        }
+        catch (Exception e)
+        {
+            FrameGenHost.SetError("stretch to scene: " + e.GetType().Name + ": " + e.Message);
+            return false;
+        }
+        finally
+        {
+            DisposeView(ref rtv);
+            DisposeView(ref srv);
+        }
+    }
+
+    private static bool EnsureStretchPipeline(Device device)
+    {
+        if (_stretchPs != null && _stretchSampler != null && _mvVs != null)
+            return true;
+        if (!EnsureMvShaders(device))
+            return false;
+        try
+        {
+            _stretchPs ??= new PixelShader(device, ShaderBytecode.StretchPs);
+            _stretchSampler ??= new SamplerState(device, new SamplerStateDescription
+            {
+                Filter = Filter.MinMagMipLinear,
+                AddressU = TextureAddressMode.Clamp,
+                AddressV = TextureAddressMode.Clamp,
+                AddressW = TextureAddressMode.Clamp
+            });
+            return true;
+        }
+        catch (Exception e)
+        {
+            FrameGenHost.SetError("failed to create stretch pipeline: " + e.GetType().Name);
+            return false;
+        }
     }
 
     /// <summary>
@@ -966,8 +1071,10 @@ internal static class FrameGenD3d
         DisposeView(ref _csCb);
         DisposeView(ref _csSampler);
         DisposeView(ref _blitPs);
+        DisposeView(ref _stretchPs);
         DisposeView(ref _blitCb);
         DisposeView(ref _blitSampler);
+        DisposeView(ref _stretchSampler);
     }
 
     private static void DisposeView<T>(ref T view) where T : class, IDisposable

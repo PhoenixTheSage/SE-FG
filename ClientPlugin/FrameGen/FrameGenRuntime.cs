@@ -37,6 +37,7 @@ public static class FrameGenRuntime
     private static readonly float[] PrevViewProj = new float[16];
     private static bool _haveInterp;
     private static bool _haveScene;
+    private static bool _sceneClean;
     private static float _mvScaleX = 1f;
     private static float _mvScaleY = 1f;
     private static bool _hadExternalVelocity;
@@ -68,9 +69,9 @@ public static class FrameGenRuntime
     public static bool IsLive => WantsFrameGen && FrameGenHost.IsReady && !MyRender11.MultisamplingEnabled;
 
     /// <summary>
-    /// Skip Keen PostPP and extra-Present only while a generated frame will
-    /// actually be inserted. Refresh-cap / VSync still leave IsLive true, so
-    /// a HUD redraw on top of Keen's pass would stack UiBkOpacity.
+    /// Extra Present only while a generated frame will actually be inserted.
+    /// Refresh-cap / VSync still leave IsLive true; HUD takeover used to key
+    /// off this and stack UiBkOpacity — Keen PostPP is never skipped now.
     /// </summary>
     public static bool ShouldInsertFrame =>
         IsLive && _consecutiveFails < 3 && GameSyncInterval() == 0 && !_refreshCapped;
@@ -92,6 +93,7 @@ public static class FrameGenRuntime
         LastGenerateFailed = false;
         _haveInterp = false;
         _haveScene = false;
+        _sceneClean = false;
         _refreshCapped = false;
         _mvScaleX = _mvScaleY = 1f;
         _hadExternalVelocity = false;
@@ -112,6 +114,7 @@ public static class FrameGenRuntime
         GeneratedThisFrame = false;
         _haveInterp = false;
         _haveScene = false;
+        _sceneClean = false;
         GenerateCount = SkipCount = 0;
         LastBindingEvidence = LastPath = _lastVelocitySource = null;
         GameFps = DisplayFps = 0;
@@ -248,12 +251,41 @@ public static class FrameGenRuntime
     public static void BeginSceneCapture()
     {
         _haveScene = false;
+        _sceneClean = false;
     }
 
     /// <summary>
-    /// Snapshot swapchain color after <c>DrawScene</c> / CopyToRT. Keen PostPP
-    /// has already blended Rich HUD (we do not skip+redraw). HudCopy at Present
-    /// plus Copy.hlsl keep HUD unwarped on the interpolant.
+    /// Snapshot the Keen PostPP LDR target before Rich HUD blends. SceneCopy
+    /// must stay HUD-free so Copy.hlsl can restore unwarped HUD from HudCopy
+    /// and so the interpolant does not temporally thicken UI glyphs.
+    /// </summary>
+    public static void CapturePrePostPp(IRtvBindable target)
+    {
+        if (!WantsFrameGen || MyRender11.MultisamplingEnabled)
+            return;
+        var color = target?.Resource;
+        if (color == null)
+            return;
+
+        var rc = MyRender11.RC;
+        var device = MyRender11.DeviceInstance;
+        var bb = MyRender11.Backbuffer?.Resource;
+        if (rc?.DeviceContext == null || device == null || bb == null)
+            return;
+        if (!TryGetTexture2D(bb, out var bbTex))
+            return;
+        if (!FrameGenD3d.EnsureColorCopies(device, bbTex.Description))
+            return;
+        if (!FrameGenD3d.CopyOrStretchToScene(device, rc.DeviceContext, color))
+            return;
+
+        _haveScene = true;
+        _sceneClean = true;
+    }
+
+    /// <summary>
+    /// Fallback snapshot of swapchain color after <c>DrawScene</c> / CopyToRT.
+    /// Only used when pre-PostPP capture missed; may include Keen HUD.
     /// </summary>
     public static void CaptureScene(Resource source = null)
     {
@@ -280,12 +312,15 @@ public static class FrameGenRuntime
 
         FrameGenD3d.CopyFromBackbuffer(rc.DeviceContext, color, FrameGenD3d.SceneCopy);
         _haveScene = true;
+        _sceneClean = false;
     }
 
     public static bool HaveSceneSnapshot => _haveScene && FrameGenD3d.SceneCopy != null;
 
     public static void CaptureSceneFallback()
     {
+        // Prefer pre-PostPP SceneCopy. Do not overwrite a clean snapshot with
+        // the HUD-bearing backbuffer after CopyToRT.
         if (_haveScene)
             return;
         CaptureScene();
@@ -367,6 +402,7 @@ public static class FrameGenRuntime
             _resetHistory = false;
             LastBindingEvidence = "Present source=" + (_lastVelocitySource ?? "none") +
                                   " scale=" + _mvScaleX.ToString("0.###") + "," + _mvScaleY.ToString("0.###") +
+                                  " scene=" + (_sceneClean ? "prePostPP" : "fallback") +
                                   " reset=" + resetReason;
 
             FrameGenD3d.UnbindPipeline(context);
