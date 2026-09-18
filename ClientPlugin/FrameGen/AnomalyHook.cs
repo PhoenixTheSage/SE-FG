@@ -271,6 +271,19 @@ internal static class AnomalyHook
         return true;
     }
 
+    internal static SharpDX.Direct3D11.ShaderResourceView GetVolumeReactive()
+    {
+        Probe();
+        try
+        {
+            object buffer=_catalogActive?.Invoke(null,new object[]{"volumeReactive"});
+            if(buffer==null || buffer.GetType().GetProperty("IsAvailable")?.GetValue(buffer) is not true) return null;
+            // The host validates exact frame and resource epoch in IsAvailable.
+            return (buffer.GetType().GetProperty("Srv")?.GetValue(buffer) as ISrvBindable)?.Srv;
+        }
+        catch { return null; }
+    }
+
     public static bool TryGetReactiveMask(int expectedWidth, int expectedHeight, out IntPtr native)
     {
         native = IntPtr.Zero;

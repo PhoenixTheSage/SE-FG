@@ -34,9 +34,7 @@ Optional [Rich HUD Master](https://steamcommunity.com/workshop/filedetails/?id=1
 
 ## How it runs
 
-`FrameGenD3d` creates a compute shader from baked DXBC (`FrameGen/Shaders/Interpolate.hlsl`, `fxc cs_5_0`) and dispatches it with SharpDX, the same way camera motion vectors use `Mv.hlsl`. Bidirectional warp to t=0.5 with depth disocclusion; near-zero motion copies the current scene. The interpolator reads the **scene** snapshot taken after `DrawScene` / CopyToRT (before `ConsumeMainSprites`) at the **DXGI swapchain** size. Anomaly velocity is RG16F pixel delta at **internal / DRS** size; FrameGen UV-samples it and converts `mvUv = mvPx / velSize` (`MvScale = output/internal`). Camera-from-depth at swapchain size is the fallback. DLSS/FRS `SetDRS` makes `Backbuffer.Size` follow internal `ResolutionI`; FrameGen does not use that for UAV or Present size. Depth is sampled in UV so gbuffer (internal) still matches the upscaled color. After Keen `Present`, `Copy.hlsl` blits that interpolant through an sRGB RTV (sample-by-UV so a leftover internal UAV cannot leave a black pillar) and restores HUD pixels that differ from the scene copy. Do not `CopyResource` UNORM UAV color onto an `*_SRGB` backbuffer — that double-encodes and crushes midtones. The render thread does not spin-wait a half frame (that path halves game FPS and flashes the interpolant before the real frame). When the game already fills the monitor (native FPS approaching the display Hz), the extra Present is skipped — a second flip in that refresh queues the interpolant on top of the real frame and ghosts. Pulsar / PluginHub compile the C# plugin only.
-
-HUD sprites are not warped on the displayed interpolant: Keen draws PostPP once (FrameGen does not skip+redraw — that stacked UiBkOpacity). SceneCopy is taken from the LDR target *before* Keen PostPP so it stays HUD-free; after Keen Present, Copy.hlsl restores HUD pixels that differ from that clean scene. If the game already fills the monitor so extra Present is skipped, there is no interpolant. Particles drawn in the scene pass still follow scene motion vectors. Camera cuts reset history. Near-zero motion (measured in the velocity buffer's own texels, before DRS→output scale) copies the current scene.
+`FrameGenD3d` creates a compute shader from baked DXBC (`FrameGen/Shaders/Interpolate.hlsl`, `fxc cs_5_0`) and dispatches it with SharpDX, the same way camera motion vectors use `Mv.hlsl`. Bidirectional warp to t=0.5 with depth disocclusion; near-zero motion copies the current scene. The interpolator reads the **scene** snapshot taken from the LDR PostPP target *before* Keen blends Rich HUD, copied or stretched to the **DXGI swapchain** size. Anomaly velocity is RG16F pixel delta at **internal / DRS** size; FrameGen UV-samples it and converts `mvUv = mvPx / velSize` (`MvScale = output/internal`). Camera-from-depth at swapchain size is the fallback. DLSS/FRS `SetDRS` makes `Backbuffer.Size` follow internal `ResolutionI`; FrameGen does not use that for UAV or Present size. Depth is sampled in UV so gbuffer (internal) still matches the upscaled color. After Keen `Present`, `Copy.hlsl` blits that interpolant through an sRGB RTV (sample-by-UV so a leftover internal UAV cannot leave a black pillar). Bucket 4 persistents are drawn once onto that interpolant (`TryDrawOnOutput`, no DSV). Keen GUI sprites are then pixel-diff restored (`HudCopy` vs the post-CopyToRT copy). Doing pixel-diff *before* persistents baked Rich HUD into the interpolant and stacked `UiBkOpacity`. Matching sprite-diff pixels keep the persistents; differing pixels replace with `HudCopy` (still one layer). `SrgbIn` stays 0 — Hud/Scene `*_SRGB` Loads are already linear; a second `SrgbToLinear` crushes Keen HUD to black. SceneCopy is taken from the LDR target *before* Keen PostPP using the RTV's sRGB view (custom LDR is TYPELESS) so the interpolant stays HUD-free. Do not snapshot the backbuffer after CopyToRT as the interpolant fallback — native FXAA has already blended PostPP. The interpolant UAV is `R16G16B16A16_Float` (linear); do not `CopyResource` it onto an `*_SRGB` backbuffer and do not fall back to an 8-bit UNORM UAV — that quantizes dark glow to ~13/255 sRGB. The render thread does not spin-wait a half frame (that path halves game FPS and flashes the interpolant before the real frame). When the game already fills the monitor (native FPS approaching the display Hz), the extra Present is skipped — a second flip in that refresh queues the interpolant on top of the real frame and ghosts. Particles drawn in the scene pass still follow scene motion vectors. Camera cuts reset history. Near-zero motion (measured in the velocity buffer's own texels, before DRS→output scale) copies the current scene. Pulsar / PluginHub compile the C# plugin only.
 
 ## Building
 
@@ -73,3 +71,24 @@ Overlap: extra Present plus camera interpolation. Disable SmoothFrames camera in
 Open an issue with **Show Status** text, GPU, driver version, and `SpaceEngineers.log`.
 
 Anomaly consumer verification: [Tests/ANOMALY-ACCEPTANCE.md](Tests/ANOMALY-ACCEPTANCE.md).
+
+## FG dark-color precision fix (2026-09-18)
+
+The generated-frame UAV is always RGBA16F linear light, including SDR output.
+Previously SDR sRGB inputs were decoded into an 8-bit linear UNORM UAV before
+presentation re-encoded them to sRGB. The first nonzero linear code became
+approximately 13/255 sRGB, erasing dim stars and making warm glare gradients
+step abruptly. Motion changes the sampled values and hence the quantization
+error. No lossy UNORM fallback is allowed if floating-point allocation fails.
+The output RTV still performs the existing SDR encoding; HDR stays floating point.
+Status binding evidence now records input and interpolation formats.
+
+Run `dotnet run --project Tests/ColorRegression.csproj -c Release` for actual
+D3D11 WARP capture/interpolation/presentation checks using production code and
+baked shaders. Twelve cases cover faint stars and dark gradients in SDR/HDR,
+stationary, integer and fractional motion. The old UAV format fails the test;
+the float fix passes. These tests do not exercise DXGI display pacing or HUD.
+The user isolated the reported sun ring and movement brightness to FG; confirm
+both in-game after updating SE-FG. No FSR or celestial motion-vector change is
+part of this fix. RGBA16F increases SDR interpolation-buffer storage by four
+bytes per output pixel (about 8 MiB at 1080p).

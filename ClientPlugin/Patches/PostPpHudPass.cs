@@ -4,6 +4,7 @@ using System.Threading;
 using ClientPlugin.FrameGen;
 using HarmonyLib;
 using Sandbox.Game.World;
+using SharpDX.Direct3D11;
 using VRage.Game;
 using VRage.Render11.RenderContext;
 using VRage.Render11.Resources;
@@ -13,9 +14,10 @@ using VRageRender;
 namespace ClientPlugin.Patches;
 
 /// <summary>
-/// Freeze Rich HUD billboards in layout view space for Copy.hlsl restore.
-/// Keen always draws PostPP (no skip+redraw — that stacked UiBkOpacity).
-/// Same camera lock as SE-DLSS <c>PostPpHudSpace</c>; no DRS/jitter path.
+/// Freeze Rich HUD billboards in layout view space for the generated-frame
+/// PostPP composite. Keen GUI sprites are pixel-diff restored; bucket 4 is
+/// drawn once after the interpolant blit (no DSV). Same camera lock as
+/// SE-DLSS <c>PostPpHudSpace</c>.
 /// </summary>
 internal static class PostPpHudPass
 {
@@ -69,9 +71,9 @@ internal static class PostPpHudPass
 
     public static bool ShouldSkipKeenPostPp()
     {
-        // Keen draws PostPP once. Skip+redraw stacked UiBkOpacity and the
-        // Pulsar/Rich HUD terminal. Scene may include HUD; Copy.hlsl restores
-        // unwarped HUD pixels from HudCopy after interpolate.
+        // Keen draws PostPP on the real frame. Skip+redraw stacked UiBkOpacity.
+        // Generated frames restore Keen GUI via Copy.hlsl (Hud vs post-CopyToRT)
+        // and composite bucket 4 once in TryDrawOnOutput (no DSV).
         return false;
     }
 
@@ -161,8 +163,101 @@ internal static class PostPpHudPass
 
     public static void TryDrawAfterSceneBlit()
     {
-        // Intentionally empty: Keen RenderPostPP owns Rich HUD. Redrawing
-        // after CopyToRT was the opacity stack.
+        // Keen RenderPostPP owns the real Present. Redrawing here stacked
+        // UiBkOpacity. TryDrawOnOutput composites bucket 4 onto the interpolant.
+    }
+
+    /// <summary>
+    /// Composite bucket 4 onto the interpolant before Keen GUI sprites.
+    /// No DSV. Do this before pixel-diff so HudCopy cannot bake PostPP and
+    /// then restack UiBkOpacity here.
+    /// </summary>
+    public static void TryDrawOnOutput()
+    {
+        if (!FrameGenRuntime.IsLive || _drawingPostPp)
+            return;
+        var dest = MyRender11.Backbuffer;
+        var rc = MyRender11.RC;
+        if (dest == null || rc == null)
+            return;
+        var width = FrameGenRuntime.Width;
+        var height = FrameGenRuntime.Height;
+        if (width <= 0 || height <= 0)
+            return;
+
+        BindOutputHudConstants(width, height);
+        if (!EnsurePostPpBatches(rc))
+            return;
+
+        BindOutputHudConstants(width, height);
+        if (dest.Rtv == null)
+            return;
+
+        _drawingPostPp = true;
+        try
+        {
+            rc.ComputeShader.SetUav(0, null);
+            rc.SetBlendState(MyBlendStateManager.BlendAlphaPremult);
+            rc.SetDepthStencilState(MyDepthStencilStateManager.IgnoreDepthStencil);
+            BindHudRtv(rc, dest);
+            rc.SetViewport(0f, 0f, width, height);
+            try
+            {
+                MyBillboardRenderer.Render(
+                    rc, null, MyBillboardRenderer.m_bucketBatches[PostPpBucket], false, true);
+            }
+            finally
+            {
+                rc.SetRtvNull();
+            }
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write("TryDrawOnOutput: " + e.GetType().Name + ": " + e.Message);
+        }
+        finally
+        {
+            _drawingPostPp = false;
+        }
+    }
+
+    static void BindOutputHudConstants(int width, int height)
+    {
+        MyRender11.ViewportResolution = new Vector2I(width, height);
+        var env = MyRender11.Environment?.Matrices;
+        var data = MyCommon.FrameConstantsData;
+        if (env != null)
+        {
+            data.Environment.View = Matrix.Transpose(env.ViewAt0);
+            data.Environment.Projection = Matrix.Transpose(env.Projection);
+            data.Environment.ProjectionForSkybox = Matrix.Transpose(env.ProjectionForSkybox);
+            data.Environment.ViewProjection = Matrix.Transpose(env.ViewProjectionAt0);
+            data.Environment.InvView = Matrix.Transpose(env.InvViewAt0);
+            data.Environment.InvProjection = Matrix.Transpose(env.InvProjection);
+            data.Environment.InvViewProjection = Matrix.Transpose(env.InvViewProjectionAt0);
+            data.Environment.WorldOffset = new Vector4(env.CameraPosition, 0f);
+        }
+        data.Screen.Resolution = new Vector2(width, height);
+        MyCommon.FrameConstantsData = data;
+        var mapping = MyMapping.MapDiscard(MyCommon.FrameConstants);
+        try
+        {
+            mapping.WriteAndPosition(ref MyCommon.FrameConstantsData);
+        }
+        finally
+        {
+            mapping.Unmap();
+        }
+    }
+
+    static void BindHudRtv(MyRenderContext rc, IRtvBindable target)
+    {
+        rc.ResetTargets();
+        var rtv = target?.Rtv;
+        if (rtv != null && rc.DeviceContext != null)
+            rc.DeviceContext.OutputMerger.SetTargets((DepthStencilView)null, 1, new[] { rtv });
+        if (target != null)
+            rc.SetRtv(target);
     }
 
     static bool EnsurePostPpBatches(MyRenderContext rc)

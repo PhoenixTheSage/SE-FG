@@ -38,6 +38,7 @@ public static class FrameGenRuntime
     private static bool _haveInterp;
     private static bool _haveScene;
     private static bool _sceneClean;
+    private static bool _havePostPpCopy;
     private static float _mvScaleX = 1f;
     private static float _mvScaleY = 1f;
     private static bool _hadExternalVelocity;
@@ -252,12 +253,13 @@ public static class FrameGenRuntime
     {
         _haveScene = false;
         _sceneClean = false;
+        _havePostPpCopy = false;
     }
 
     /// <summary>
-    /// Snapshot the Keen PostPP LDR target before Rich HUD blends. SceneCopy
-    /// must stay HUD-free so Copy.hlsl can restore unwarped HUD from HudCopy
-    /// and so the interpolant does not temporally thicken UI glyphs.
+    /// Snapshot the Keen PostPP LDR target before HUD blends. SceneCopy
+    /// must stay HUD-free so the interpolant does not temporally thicken UI.
+    /// Pass the RTV's view format / SRV — custom LDR is TYPELESS.
     /// </summary>
     public static void CapturePrePostPp(IRtvBindable target)
     {
@@ -276,54 +278,52 @@ public static class FrameGenRuntime
             return;
         if (!FrameGenD3d.EnsureColorCopies(device, bbTex.Description))
             return;
-        if (!FrameGenD3d.CopyOrStretchToScene(device, rc.DeviceContext, color))
+
+        var viewFormat = Format.Unknown;
+        ShaderResourceView existingSrv = null;
+        if (target is ITexture tex)
+            viewFormat = tex.Format;
+        if (target is ISrvBindable srvBind)
+            existingSrv = srvBind.Srv;
+
+        if (!FrameGenD3d.CopyOrStretchToScene(device, rc.DeviceContext, color, viewFormat, existingSrv))
             return;
 
         _haveScene = true;
         _sceneClean = true;
     }
 
-    /// <summary>
-    /// Fallback snapshot of swapchain color after <c>DrawScene</c> / CopyToRT.
-    /// Only used when pre-PostPP capture missed; may include Keen HUD.
-    /// </summary>
-    public static void CaptureScene(Resource source = null)
-    {
-        if (!WantsFrameGen || MyRender11.MultisamplingEnabled)
-            return;
-
-        var rc = MyRender11.RC;
-        var device = MyRender11.DeviceInstance;
-        var color = source ?? MyRender11.Backbuffer?.Resource;
-        if (rc?.DeviceContext == null || device == null || color == null)
-            return;
-        if (!TryGetTexture2D(color, out var colorTex))
-            return;
-
-        var bb = MyRender11.Backbuffer?.Resource;
-        if (bb == null || !TryGetTexture2D(bb, out var bbTex))
-            return;
-        if (!FrameGenD3d.EnsureColorCopies(device, bbTex.Description))
-            return;
-        if (colorTex.Description.Width != bbTex.Description.Width ||
-            colorTex.Description.Height != bbTex.Description.Height ||
-            colorTex.Description.Format != bbTex.Description.Format)
-            return;
-
-        FrameGenD3d.CopyFromBackbuffer(rc.DeviceContext, color, FrameGenD3d.SceneCopy);
-        _haveScene = true;
-        _sceneClean = false;
-    }
-
     public static bool HaveSceneSnapshot => _haveScene && FrameGenD3d.SceneCopy != null;
 
     public static void CaptureSceneFallback()
     {
-        // Prefer pre-PostPP SceneCopy. Do not overwrite a clean snapshot with
-        // the HUD-bearing backbuffer after CopyToRT.
-        if (_haveScene)
+        // Native FXAA CopyToRT already has PostPP HUD. Capturing that
+        // backbuffer makes SceneCopy == HudCopy, so pixel-diff restore
+        // (and a warped interpolant plus alpha HUD) drop the terminal.
+        // Skip interpolate this frame if pre-PostPP capture missed.
+    }
+
+    /// <summary>
+    /// Backbuffer after CopyToRT (PostPP in, ConsumeMainSprites still pending).
+    /// Copy.hlsl diffs Present HudCopy against this so Keen GUI sprites restore
+    /// without treating Rich HUD as scene — that stacked with TryDrawOnOutput
+    /// when SceneCopy was used as the diff reference.
+    /// </summary>
+    public static void CaptureAfterCopyToRt()
+    {
+        if (!WantsFrameGen || MyRender11.MultisamplingEnabled)
             return;
-        CaptureScene();
+        var rc = MyRender11.RC;
+        var device = MyRender11.DeviceInstance;
+        var color = MyRender11.Backbuffer?.Resource;
+        if (rc?.DeviceContext == null || device == null || color == null)
+            return;
+        if (!TryGetTexture2D(color, out var colorTex))
+            return;
+        if (!FrameGenD3d.EnsureColorCopies(device, colorTex.Description))
+            return;
+        FrameGenD3d.CopyFromBackbuffer(rc.DeviceContext, color, FrameGenD3d.CurrCopy);
+        _havePostPpCopy = true;
     }
 
     public static void OnPresent()
@@ -406,9 +406,11 @@ public static class FrameGenRuntime
                                   " reset=" + resetReason;
 
             FrameGenD3d.UnbindPipeline(context);
+            var volumeReactive = AnomalyHook.GetVolumeReactive();
+            LastBindingEvidence += " volumeReactive=" + (volumeReactive != null ? "current" : "none");
             var code = FrameGenHost.Interpolate(
                 device, context, FrameGenD3d.SceneCopy, depth, mvec,
-                FrameGenD3d.InterpCopy, (uint)Width, (uint)Height, reset, _mvScaleX, _mvScaleY);
+                FrameGenD3d.InterpCopy, (uint)Width, (uint)Height, reset, _mvScaleX, _mvScaleY, volumeReactive);
 
             if (code < 0)
             {
@@ -428,6 +430,7 @@ public static class FrameGenRuntime
                 return;
             }
 
+            LastBindingEvidence += " color=" + FrameGenD3d.ColorFormatEvidence;
             GenerateCount++;
             GeneratedThisFrame = true;
             _haveInterp = true;
@@ -483,6 +486,8 @@ public static class FrameGenRuntime
                 LastPath = "blit-fail";
                 return;
             }
+            PostPpHudPass.TryDrawOnOutput();
+            FrameGenD3d.RestoreSpritesAfterHud(device, context, dest, _havePostPpCopy);
             ExtraPresent();
             LastPath = "interpolated-after-present";
         }

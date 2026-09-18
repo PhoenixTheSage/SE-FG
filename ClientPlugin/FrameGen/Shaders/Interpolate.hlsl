@@ -14,13 +14,14 @@ cbuffer Constants : register(b0)
     float MvScaleX;
     float MvScaleY;
     uint InvertedDepth;
-    uint Pad;
+    uint HasVolumeReactive;
 };
 
 Texture2D PrevColor : register(t0);
 Texture2D CurrColor : register(t1);
 Texture2D DepthTex : register(t2);
 Texture2D MotionTex : register(t3);
+Texture2D VolumeReactive : register(t4);
 SamplerState LinearClamp : register(s0);
 RWTexture2D<float4> Output : register(u0);
 
@@ -73,5 +74,14 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
     float sum = wPrev + wCurr;
     float4 mixed = sum < 1e-3 ? currPx : (prev * wPrev + curr * wCurr) / sum;
+    if (HasVolumeReactive != 0)
+    {
+        float reject=max(VolumeReactive.SampleLevel(LinearClamp,uv,0).r,
+            max(VolumeReactive.SampleLevel(LinearClamp,saturate(uvPrev),0).r,
+                VolumeReactive.SampleLevel(LinearClamp,saturate(uvCurr),0).r));
+        // A changing participating volume has no single surface motion. Reduce
+        // interpolation confidence instead of warping it with the terrain behind it.
+        mixed=lerp(mixed,currPx,saturate(reject));
+    }
     Output[pixel] = float4(mixed.rgb, 1.0);
 }

@@ -1,8 +1,9 @@
 // Composite generated color with unwarped HUD sprites.
-// t0 Interp is the compute UAV (UNORM, linear when the swapchain is sRGB).
-// t1 Hud / t2 Scene are *_SRGB copies; Load is already linear. SrgbIn stays 0
-// (a second SrgbToLinear crushes Keen HUD to black). Dest sRGB RTV encodes.
-// Pulsar compiles C# only; bake with fxc /T ps_5_0 /E PSMain.
+// t0 is the fp16 interpolant UAV (first blit) or the sRGB composed frame
+// after PostPP persistents (sprite restore). Do not CopyResource the UAV
+// onto *_SRGB. t1 Hud / t2 diff are *_SRGB; Load is already linear.
+// SrgbIn stays 0 (a second SrgbToLinear crushes Keen HUD to black).
+// Dest sRGB RTV encodes. Pulsar compiles C# only; bake with fxc /T ps_5_0 /E PSMain.
 
 cbuffer Constants : register(b0)
 {

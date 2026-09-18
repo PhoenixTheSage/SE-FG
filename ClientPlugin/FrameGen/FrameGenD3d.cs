@@ -189,6 +189,8 @@ internal static class FrameGenD3d
         }
     }
 
+    internal static string ColorFormatEvidence => _fgFmt + " -> " + (_uavTex?.Description.Format.ToString() ?? "none");
+
     internal static Texture2D CurrCopy => _currCopy;
     internal static Texture2D InterpCopy => _interpCopy;
     internal static Texture2D SceneCopy => _sceneCopy;
@@ -205,8 +207,15 @@ internal static class FrameGenD3d
     /// <summary>
     /// Copy or UV-stretch <paramref name="source"/> into SceneCopy (swapchain-sized).
     /// Used for pre-PostPP LDR capture when the Keen target may be DRS-sized.
+    /// <paramref name="viewFormat"/> / <paramref name="existingSrv"/> are the RTV
+    /// view (custom LDR is TYPELESS; FXAA SRgb is UNORM_SRGB).
     /// </summary>
-    internal static bool CopyOrStretchToScene(Device device, DeviceContext context, Resource source)
+    internal static bool CopyOrStretchToScene(
+        Device device,
+        DeviceContext context,
+        Resource source,
+        Format viewFormat = Format.Unknown,
+        ShaderResourceView existingSrv = null)
     {
         if (device == null || context == null || source == null || _sceneCopy == null)
             return false;
@@ -218,27 +227,41 @@ internal static class FrameGenD3d
         UnbindPipeline(context);
         if (srcDesc.Width == dstDesc.Width &&
             srcDesc.Height == dstDesc.Height &&
-            srcDesc.Format == dstDesc.Format)
+            srcDesc.Format == dstDesc.Format &&
+            (viewFormat == Format.Unknown || viewFormat == dstDesc.Format))
         {
             context.CopyResource(source, _sceneCopy);
             return true;
         }
 
-        return StretchToScene(device, context, source, srcDesc);
+        return StretchToScene(device, context, source, srcDesc, viewFormat, existingSrv);
     }
 
     private static bool StretchToScene(
-        Device device, DeviceContext context, Resource source, Texture2DDescription srcDesc)
+        Device device,
+        DeviceContext context,
+        Resource source,
+        Texture2DDescription srcDesc,
+        Format viewFormat = Format.Unknown,
+        ShaderResourceView existingSrv = null)
     {
         if (!EnsureStretchPipeline(device))
             return false;
 
         ShaderResourceView srv = null;
+        var ownSrv = false;
         RenderTargetView rtv = null;
         try
         {
-            if (!TryCreateColorSrv(device, source, srcDesc.Format, out srv))
-                return false;
+            if (existingSrv != null && !existingSrv.IsDisposed)
+                srv = existingSrv;
+            else
+            {
+                var srvFormat = viewFormat != Format.Unknown ? viewFormat : srcDesc.Format;
+                if (!TryCreateColorSrv(device, source, srvFormat, out srv))
+                    return false;
+                ownSrv = true;
+            }
             try
             {
                 rtv = new RenderTargetView(device, _sceneCopy);
@@ -276,7 +299,8 @@ internal static class FrameGenD3d
         finally
         {
             DisposeView(ref rtv);
-            DisposeView(ref srv);
+            if (ownSrv)
+                DisposeView(ref srv);
         }
     }
 
@@ -379,7 +403,8 @@ internal static class FrameGenD3d
         uint height,
         int reset,
         float mvScaleX = 1f,
-        float mvScaleY = 1f)
+        float mvScaleY = 1f,
+        ShaderResourceView volumeReactive = null)
     {
         if (device == null || context == null || color == null || output == null || width == 0 || height == 0)
         {
@@ -430,7 +455,7 @@ internal static class FrameGenD3d
                 return -5;
             }
 
-            FillInterpolateConstantBuffer(width, height, mvScaleX, mvScaleY, invertedDepth: 1);
+            FillInterpolateConstantBuffer(width, height, mvScaleX, mvScaleY, invertedDepth: 1, hasVolumeReactive: volumeReactive != null ? 1u : 0u);
             var mapped = context.MapSubresource(_csCb, 0, MapMode.WriteDiscard, SharpDX.Direct3D11.MapFlags.None);
             Marshal.Copy(CsCbScratch, 0, mapped.DataPointer, InterpolateConstantBufferSize);
             context.UnmapSubresource(_csCb, 0);
@@ -443,6 +468,7 @@ internal static class FrameGenD3d
             context.ComputeShader.SetShaderResource(1, currSrv);
             context.ComputeShader.SetShaderResource(2, _cachedDepthSrv);
             context.ComputeShader.SetShaderResource(3, mvSrv);
+            context.ComputeShader.SetShaderResource(4, volumeReactive);
             context.ComputeShader.SetUnorderedAccessView(0, _uav);
             context.Dispatch((int)((width + 7) / 8), (int)((height + 7) / 8), 1);
             UnbindPipeline(context);
@@ -644,7 +670,11 @@ internal static class FrameGenD3d
                 return false;
             }
 
-            var uavFmt = TypelessColor(colorFormat);
+            // SRGB SRVs decode to linear light. An 8-bit UNORM UAV quantizes
+            // that linear signal before the presentation RTV re-encodes it:
+            // its first nonzero code becomes ~13/255 sRGB. Preserve dark glow
+            // gradients and subpixel stellar flux in floating point instead.
+            var uavFmt = Format.R16G16B16A16_Float;
             var uavDesc = new Texture2DDescription
             {
                 Width = (int)width,
@@ -656,15 +686,8 @@ internal static class FrameGenD3d
                 Usage = ResourceUsage.Default,
                 BindFlags = BindFlags.ShaderResource | BindFlags.UnorderedAccess | BindFlags.RenderTarget
             };
-            try
-            {
-                _uavTex = new Texture2D(device, uavDesc);
-            }
-            catch
-            {
-                uavDesc.Format = Format.R8G8B8A8_UNorm;
-                _uavTex = new Texture2D(device, uavDesc);
-            }
+            // Failure must skip FG, never silently fall back to lossy linear UNORM.
+            _uavTex = new Texture2D(device, uavDesc);
             _uav = new UnorderedAccessView(device, _uavTex, new UnorderedAccessViewDescription
             {
                 Format = uavDesc.Format,
@@ -762,9 +785,11 @@ internal static class FrameGenD3d
         out ShaderResourceView srv, bool preferSrgbView = true)
     {
         srv = null;
-        var formats = preferSrgbView && IsSrgb(resourceFormat)
+        var preferSrgb = preferSrgbView && (IsSrgb(resourceFormat) || IsTypelessRgba(resourceFormat));
+        var formats = preferSrgb
             ? new[]
             {
+                IsSrgb(resourceFormat) ? resourceFormat : SrgbColor(resourceFormat),
                 resourceFormat,
                 TypelessColor(resourceFormat),
                 Format.R8G8B8A8_UNorm_SRgb,
@@ -853,7 +878,7 @@ internal static class FrameGenD3d
     }
 
     private static void FillInterpolateConstantBuffer(
-        uint width, uint height, float mvScaleX, float mvScaleY, uint invertedDepth)
+        uint width, uint height, float mvScaleX, float mvScaleY, uint invertedDepth, uint hasVolumeReactive)
     {
         System.Buffer.BlockCopy(BitConverter.GetBytes(width), 0, CsCbScratch, 0, 4);
         System.Buffer.BlockCopy(BitConverter.GetBytes(height), 0, CsCbScratch, 4, 4);
@@ -862,7 +887,7 @@ internal static class FrameGenD3d
         System.Buffer.BlockCopy(BitConverter.GetBytes(mvScaleX), 0, CsCbScratch, 16, 4);
         System.Buffer.BlockCopy(BitConverter.GetBytes(mvScaleY), 0, CsCbScratch, 20, 4);
         System.Buffer.BlockCopy(BitConverter.GetBytes(invertedDepth), 0, CsCbScratch, 24, 4);
-        System.Buffer.BlockCopy(BitConverter.GetBytes(0u), 0, CsCbScratch, 28, 4);
+        System.Buffer.BlockCopy(BitConverter.GetBytes(hasVolumeReactive), 0, CsCbScratch, 28, 4);
     }
 
     private static bool TryGetTexture2D(Resource resource, out Texture2D tex)
@@ -873,8 +898,61 @@ internal static class FrameGenD3d
 
     internal static bool BlitGeneratedFrame(Device device, DeviceContext context, Resource dest)
     {
-        if (device == null || context == null || dest == null || _uavTex == null ||
-            _sceneCopy == null || _hudCopy == null)
+        // t1 == t2 → hudPx is 0. Interpolant only; PostPP persistents and Keen
+        // sprites are applied after this so UiBkOpacity cannot stack.
+        if (_uavSrv == null || _sceneCopy == null)
+            return false;
+        return BlitComposite(device, context, dest, _uavSrv, _sceneCopy, _sceneCopy);
+    }
+
+    /// <summary>
+    /// After <c>TryDrawOnOutput</c>, restore Keen GUI sprites. Pixel-diff of
+    /// HudCopy vs the post-CopyToRT image (or SceneCopy) replaces dest where
+    /// they differ; matching pixels keep the already-composited persistents.
+    /// </summary>
+    internal static bool RestoreSpritesAfterHud(Device device, DeviceContext context, Resource dest,
+        bool diffAgainstPostPpCopy)
+    {
+        if (device == null || context == null || dest == null || _interpCopy == null || _hudCopy == null)
+            return false;
+        var diffSrc = diffAgainstPostPpCopy && _currCopy != null ? _currCopy : _sceneCopy;
+        if (diffSrc == null)
+            return false;
+
+        UnbindPipeline(context);
+        try
+        {
+            context.CopyResource(dest, _interpCopy);
+        }
+        catch (Exception e)
+        {
+            FrameGenHost.SetError("copy composed frame: " + e.GetType().Name + ": " + e.Message);
+            return false;
+        }
+
+        ShaderResourceView composedSrv = null;
+        try
+        {
+            if (!TryCreateColorSrv(device, _interpCopy, _interpCopy.Description.Format, out composedSrv))
+                return false;
+            return BlitComposite(device, context, dest, composedSrv, _hudCopy, diffSrc);
+        }
+        finally
+        {
+            DisposeView(ref composedSrv);
+        }
+    }
+
+    private static bool BlitComposite(
+        Device device,
+        DeviceContext context,
+        Resource dest,
+        ShaderResourceView t0,
+        Texture2D hudSrc,
+        Texture2D diffSrc)
+    {
+        if (device == null || context == null || dest == null || t0 == null ||
+            hudSrc == null || diffSrc == null)
             return false;
         if (!EnsureBlitPipeline(device) || !TryGetTexture2D(dest, out var destTex))
             return false;
@@ -886,8 +964,8 @@ internal static class FrameGenD3d
         {
             // Copies are *_SRGB: an UNORM view cannot be created, so Load is already linear.
             // SrgbIn must stay 0 or HUD is linearized twice and goes black.
-            if (!TryCreateColorSrv(device, _hudCopy, _hudCopy.Description.Format, out hudSrv) ||
-                !TryCreateColorSrv(device, _sceneCopy, _sceneCopy.Description.Format, out sceneSrv))
+            if (!TryCreateColorSrv(device, hudSrc, hudSrc.Description.Format, out hudSrv) ||
+                !TryCreateColorSrv(device, diffSrc, diffSrc.Description.Format, out sceneSrv))
                 return false;
 
             try
@@ -918,7 +996,7 @@ internal static class FrameGenD3d
             context.PixelShader.Set(_blitPs);
             context.PixelShader.SetConstantBuffer(0, _blitCb);
             context.PixelShader.SetSampler(0, _blitSampler);
-            context.PixelShader.SetShaderResource(0, _uavSrv);
+            context.PixelShader.SetShaderResource(0, t0);
             context.PixelShader.SetShaderResource(1, hudSrv);
             context.PixelShader.SetShaderResource(2, sceneSrv);
             context.OutputMerger.SetTargets(rtv);
@@ -976,6 +1054,29 @@ internal static class FrameGenD3d
         return format == Format.R8G8B8A8_UNorm_SRgb ||
                format == Format.B8G8R8A8_UNorm_SRgb ||
                format == Format.B8G8R8X8_UNorm_SRgb;
+    }
+
+    private static bool IsTypelessRgba(Format format)
+    {
+        return format == Format.R8G8B8A8_Typeless ||
+               format == Format.B8G8R8A8_Typeless;
+    }
+
+    private static Format SrgbColor(Format format)
+    {
+        switch (format)
+        {
+            case Format.R8G8B8A8_Typeless:
+            case Format.R8G8B8A8_UNorm:
+            case Format.R8G8B8A8_UNorm_SRgb:
+                return Format.R8G8B8A8_UNorm_SRgb;
+            case Format.B8G8R8A8_Typeless:
+            case Format.B8G8R8A8_UNorm:
+            case Format.B8G8R8A8_UNorm_SRgb:
+                return Format.B8G8R8A8_UNorm_SRgb;
+            default:
+                return format;
+        }
     }
 
     private static Format TypelessColor(Format format)

@@ -16,10 +16,12 @@ internal static class DrawScenePatch
     }
 
     [HarmonyPostfix]
+    [HarmonyPriority(Priority.First)]
     private static void Postfix()
     {
         try
         {
+            FrameGenRuntime.CaptureAfterCopyToRt();
             FrameGenRuntime.CaptureSceneFallback();
             PostPpHudPass.TryDrawAfterSceneBlit();
         }
