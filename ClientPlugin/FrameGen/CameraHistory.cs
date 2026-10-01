@@ -31,6 +31,11 @@ internal static class CameraHistory
         var env = MyRender11.Environment != null ? MyRender11.Environment.Matrices : null;
         if (env != null)
         {
+            // At0 matrices omit the camera origin. Reconstructed positions are
+            // relative to this frame's camera, so shift them into the previous
+            // camera's origin before applying its rotation/projection.
+            var delta = env.CameraPosition - _previousCameraPos;
+            PreviousViewProjection = Matrix.CreateTranslation((Vector3)delta) * PreviousViewProjection;
             ViewProjection = env.ViewProjectionAt0;
             InvViewProjection = env.InvViewProjectionAt0;
         }

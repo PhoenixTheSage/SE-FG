@@ -92,3 +92,78 @@ The user isolated the reported sun ring and movement brightness to FG; confirm
 both in-game after updating SE-FG. No FSR or celestial motion-vector change is
 part of this fix. RGBA16F increases SDR interpolation-buffer storage by four
 bytes per output pixel (about 8 MiB at 1080p).
+
+## Review fixes and regression checks
+
+Camera-from-depth fallback includes the camera-origin delta in the previous
+projection; the baked motion shader matches the source's current-to-previous
+direction. Raw D3D passes isolate and restore the host pipeline state, including
+blend/write-mask and scissor behavior. Failed or missed generation requires a
+fresh color-history seed. Insertion failures accumulate until a complete extra
+Present succeeds; a failed Keen sprite restore suppresses extra Present.
+
+Optional Anomaly discovery retries on assembly load or after two seconds,
+including terminal/overlay registration. Owned color views and one external
+motion view are reused and released on replacement/resize/shutdown. Swapchain
+RTVs remain temporary so they cannot prevent `ResizeBuffers`.
+
+Run the independent harnesses:
+
+- `dotnet run --project Tests/ColorRegression.csproj -c Release`
+- `dotnet run --project Tests/AnomalyAcceptance.csproj -c Release`
+- `dotnet run --project Tests/RuntimeRegression.csproj -c Release`
+- `dotnet run --project Tests/WarpRegression.csproj -c Release`
+
+The runtime harness uses production history, failure policy, graphics code and
+baked shaders with a stubbed game boundary and real D3D11 WARP. It checks camera
+translation at large world coordinates, direction, cuts, inherited state and
+restoration (context-state swaps and the legacy fallback), discovery retries,
+failure recovery, and resizing/replaced velocity resources. These checks do not
+certify live HUD composition, display pacing, or input latency. Existing Present
+order, RGBA16F precision, sRGB behavior, and one-layer PostPP composition remain.
+
+## Edge-warp safety (2026-10-01)
+
+The interpolator preserves the real current pixel when either warped color
+footprint leaves the image or crosses a rejected depth boundary. It no longer
+forces a minimum current-sample weight after rejecting that sample. Depth
+confidence checks the individual contributing filter taps, so a thin rail and
+the wall behind it cannot produce an invented blended depth. Motion uses the
+nearest producer texel to avoid creating false motion between surfaces at DRS
+size; the existing pixel-to-UV scale and sub-pixel threshold remain.
+
+The HLSL, shipped `ShaderBytecode.InterpolateCs`, and checked-in bake artifacts
+are regenerated together. No new textures or shader bindings are required.
+`WarpRegression` covers all four screen borders, fractional filter footprints,
+horizontal/vertical/diagonal depth boundaries, stationary pixels next to moving
+internal-resolution motion, odd dispatch sizes, and valid interior warping in
+SDR/HDR. `RuntimeRegression` also verifies stationary and moving perspective
+camera reprojection at the center and corners against CPU math.
+
+These are automated reproductions of unsafe sampling conditions. Confirm the
+reported scene with the updated plugin in-game; the tests do not certify live
+Anomaly velocity output or establish that every cause of flicker is resolved.
+
+## Distant surfaces and changed history (2026-10-01)
+
+Complementary-depth rejection uses a relative tolerance with a small numerical
+floor and explicitly distinguishes surface coverage from sky. The former
+`1e-4` absolute floor admitted sky and different voxel surfaces at asteroid
+distances even after the edge-warp fix.
+
+On geometry, color history is checked at the full backward-motion position
+before midpoint interpolation. Large appearance mismatches gradually reduce
+history confidence; unchanged appearance at the same pixel also suppresses
+unproven motion on repeating stationary detail. Uncertain pixels keep their
+current real color. This is a conservative color-consistency heuristic, not a
+voxel-LOD event detector. It can also reduce interpolation during changing
+shading or aliased detail. Sky/star color behavior remains on its existing path.
+
+Color history continues advancing during per-pixel rejection so coherent motion
+can resume after an appearance replacement. The check uses existing textures;
+it adds color reads but no GPU buffers or CPU readback. It does not alter Keen
+streaming, voxel LOD, Anomaly motion production, or global reset/presentation
+rules. The regression suite includes distant asteroid/sky and neighboring voxel
+depths, replaced appearance, persistent false motion on stationary detail, and
+successful recovery and coherent near/far motion. Live confirmation remains
+necessary because the reported intermittent scene has not been captured here.

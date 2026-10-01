@@ -18,6 +18,7 @@ internal static class AnomalyTerminalHook
     public const string PageTitle = FolderTitle;
 
     static readonly object Gate = new();
+    static readonly DiscoveryRetry Discovery = new();
     static bool _installed;
     static object _page;
 
@@ -36,6 +37,8 @@ internal static class AnomalyTerminalHook
         {
             if (_installed)
                 return true;
+            if (!Discovery.ShouldRetry())
+                return false;
 
             var page = RequestPageUnlocked();
             if (page == null)
@@ -55,6 +58,7 @@ internal static class AnomalyTerminalHook
         lock (Gate)
         {
             _installed = false;
+            Discovery.Reset();
             _page = null;
         }
     }

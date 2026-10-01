@@ -35,6 +35,11 @@ internal static class AnomalyHook
         ConventionUnjittered | ConventionPixelSpace | ConventionMatchesRenderResolution | ConventionCurrentToPrevious;
 
     private static readonly object Gate = new();
+    private static readonly DiscoveryRetry Discovery = new();
+    private static readonly object[] VolumeReactiveArgs = { "volumeReactive" };
+    private static Type _volumeBufferType;
+    private static PropertyInfo _volumeAvailable;
+    private static PropertyInfo _volumeSrv;
     private static readonly object[] ReactiveNameArgs = { ReactiveMaskName };
     private static readonly object[] HdrColorNameArgs = { HdrColorName };
 
@@ -134,8 +139,8 @@ internal static class AnomalyHook
         lock (Gate)
         {
             EnsureLoadHook();
-            if (_activeProperty == null || _catalogActive == null ||
-                _invalidateHistory == null || _velocitySource == null)
+            if ((_activeProperty == null || _catalogActive == null ||
+                _invalidateHistory == null || _velocitySource == null) && Discovery.ShouldRetry())
                 ScanAssembliesUnlocked();
             SyncClaimUnlocked();
         }
@@ -151,7 +156,7 @@ internal static class AnomalyHook
         lock (Gate)
         {
             EnsureLoadHook();
-            if (_claimUpscale == null && _releaseUpscale == null)
+            if (_claimUpscale == null && _releaseUpscale == null && Discovery.ShouldRetry())
                 ScanAssembliesUnlocked();
             SyncClaimUnlocked();
         }
@@ -183,6 +188,9 @@ internal static class AnomalyHook
 
             TryReleaseUpscaleUnlocked();
             ClearAccessors();
+            Discovery.Reset();
+            _volumeBufferType = null;
+            _volumeAvailable = _volumeSrv = null;
             _activeProperty = null;
             _catalogActive = null;
             _notifyUpscale = null;
@@ -276,10 +284,20 @@ internal static class AnomalyHook
         Probe();
         try
         {
-            object buffer=_catalogActive?.Invoke(null,new object[]{"volumeReactive"});
-            if(buffer==null || buffer.GetType().GetProperty("IsAvailable")?.GetValue(buffer) is not true) return null;
-            // The host validates exact frame and resource epoch in IsAvailable.
-            return (buffer.GetType().GetProperty("Srv")?.GetValue(buffer) as ISrvBindable)?.Srv;
+            lock (Gate)
+            {
+                object buffer = _catalogActive?.Invoke(null, VolumeReactiveArgs);
+                if (buffer == null) return null;
+                if (_volumeBufferType != buffer.GetType())
+                {
+                    _volumeBufferType = buffer.GetType();
+                    _volumeAvailable = _volumeBufferType.GetProperty("IsAvailable");
+                    _volumeSrv = _volumeBufferType.GetProperty("Srv");
+                }
+                if (_volumeAvailable?.GetValue(buffer) is not true) return null;
+                // The host validates exact frame and resource epoch in IsAvailable.
+                return (_volumeSrv?.GetValue(buffer) as ISrvBindable)?.Srv;
+            }
         }
         catch { return null; }
     }

@@ -28,9 +28,9 @@ public static class FrameGenRuntime
     public static int DisplayRefreshHz { get; private set; }
 
     private static bool _configChanged = true;
-    private static bool _resetHistory = true;
+    private static readonly FrameInsertionState Insertion = new();
+    private static bool _advancedHistoryThisFrame;
     private static volatile bool _pluginsReady;
-    private static int _consecutiveFails;
     private static string _lastVelocitySource;
     private static readonly float[] InvViewProj = new float[16];
     private static readonly float[] ViewProj = new float[16];
@@ -75,7 +75,7 @@ public static class FrameGenRuntime
     /// off this and stack UiBkOpacity — Keen PostPP is never skipped now.
     /// </summary>
     public static bool ShouldInsertFrame =>
-        IsLive && _consecutiveFails < 3 && GameSyncInterval() == 0 && !_refreshCapped;
+        IsLive && !Insertion.Blocked && GameSyncInterval() == 0 && !_refreshCapped;
 
     public static void NotifyPluginsReady()
     {
@@ -89,8 +89,7 @@ public static class FrameGenRuntime
     public static void NotifyConfigChanged()
     {
         _configChanged = true;
-        _resetHistory = true;
-        _consecutiveFails = 0;
+        Insertion.Reset();
         LastGenerateFailed = false;
         _haveInterp = false;
         _haveScene = false;
@@ -111,7 +110,8 @@ public static class FrameGenRuntime
         CameraHistory.Reset();
         Width = Height = 0;
         _configChanged = true;
-        _resetHistory = true;
+        Insertion.Reset();
+        LastGenerateFailed = false;
         GeneratedThisFrame = false;
         _haveInterp = false;
         _haveScene = false;
@@ -328,12 +328,26 @@ public static class FrameGenRuntime
 
     public static void OnPresent()
     {
+        _advancedHistoryThisFrame = false;
+        try
+        {
+            OnPresentCore();
+        }
+        finally
+        {
+            if (!_advancedHistoryThisFrame)
+                Insertion.RequireReset();
+        }
+    }
+
+    private static void OnPresentCore()
+    {
         GeneratedThisFrame = false;
         _haveInterp = false;
         if (!WantsFrameGen)
             return;
         SnapshotSize();
-        if (!TryPrepareFrame() || !IsLive || _consecutiveFails >= 3)
+        if (!TryPrepareFrame() || !IsLive || Insertion.Blocked)
             return;
         if (GameSyncInterval() != 0)
         {
@@ -345,7 +359,7 @@ public static class FrameGenRuntime
         if (ShouldSkipExtraForRefresh())
         {
             LastPath = "refresh-cap";
-            _resetHistory = true;
+            Insertion.RequireReset();
             return;
         }
         // DrawScene already used Keen HUD while capped. Interpolating this
@@ -353,7 +367,7 @@ public static class FrameGenRuntime
         if (wasCapped)
         {
             LastPath = "refresh-uncap";
-            _resetHistory = true;
+            Insertion.RequireReset();
             return;
         }
         if (!_haveScene || FrameGenD3d.SceneCopy == null)
@@ -395,17 +409,14 @@ public static class FrameGenRuntime
             var sourceChanged = UsedExternalVelocity != _hadExternalVelocity;
             _hadExternalVelocity = UsedExternalVelocity;
             var resetReason = VelocityAcceptance.ResetReason(
-                _resetHistory, _configChanged, CameraHistory.HasPrevious,
+                Insertion.NeedsReset, _configChanged, CameraHistory.HasPrevious,
                 mvec == IntPtr.Zero && !UsedExternalVelocity, sourceChanged, cameraCut);
             var reset = resetReason == "none" ? 0 : 1;
-            _configChanged = false;
-            _resetHistory = false;
             LastBindingEvidence = "Present source=" + (_lastVelocitySource ?? "none") +
                                   " scale=" + _mvScaleX.ToString("0.###") + "," + _mvScaleY.ToString("0.###") +
                                   " scene=" + (_sceneClean ? "prePostPP" : "fallback") +
                                   " reset=" + resetReason;
 
-            FrameGenD3d.UnbindPipeline(context);
             var volumeReactive = AnomalyHook.GetVolumeReactive();
             LastBindingEvidence += " volumeReactive=" + (volumeReactive != null ? "current" : "none");
             var code = FrameGenHost.Interpolate(
@@ -415,14 +426,15 @@ public static class FrameGenRuntime
             if (code < 0)
             {
                 LastGenerateFailed = true;
-                _consecutiveFails++;
+                Insertion.Failed();
                 LastPath = "fail " + FrameGenHost.LastError;
                 DebugLog.Write("Interpolate failed " + FrameGenHost.LastError);
                 return;
             }
 
-            _consecutiveFails = 0;
-            LastGenerateFailed = false;
+            _configChanged = false;
+            _advancedHistoryThisFrame = true;
+            Insertion.GenerationSucceeded();
             if (code == 1)
             {
                 SkipCount++;
@@ -439,7 +451,8 @@ public static class FrameGenRuntime
         catch (Exception e)
         {
             LastGenerateFailed = true;
-            _consecutiveFails = 3;
+            while (!Insertion.Blocked)
+                Insertion.Failed();
             _haveInterp = false;
             FrameGenHost.LastError = e.GetType().Name + ": " + e.Message;
             MyLog.Default.Error("FrameGen interpolate threw: " + e);
@@ -448,14 +461,6 @@ public static class FrameGenRuntime
         finally
         {
             RenderTraceBind.End("FrameGen.Interpolate");
-            try
-            {
-                FrameGenD3d.UnbindPipeline(context);
-            }
-            catch
-            {
-                // Device already torn down.
-            }
         }
     }
 
@@ -482,19 +487,33 @@ public static class FrameGenRuntime
             if (!FrameGenD3d.BlitGeneratedFrame(device, context, dest))
             {
                 LastGenerateFailed = true;
-                _consecutiveFails++;
+                Insertion.Failed();
                 LastPath = "blit-fail";
                 return;
             }
             PostPpHudPass.TryDrawOnOutput();
-            FrameGenD3d.RestoreSpritesAfterHud(device, context, dest, _havePostPpCopy);
-            ExtraPresent();
+            if (!FrameGenD3d.RestoreSpritesAfterHud(device, context, dest, _havePostPpCopy))
+            {
+                LastGenerateFailed = true;
+                Insertion.Failed();
+                LastPath = "sprite-restore-fail";
+                return;
+            }
+            if (!ExtraPresent())
+            {
+                LastGenerateFailed = true;
+                Insertion.Failed();
+                LastPath = "no-swapchain";
+                return;
+            }
+            Insertion.Presented();
+            LastGenerateFailed = false;
             LastPath = "interpolated-after-present";
         }
         catch (Exception e)
         {
             LastGenerateFailed = true;
-            _consecutiveFails++;
+            Insertion.Failed();
             FrameGenHost.LastError = "extra Present: " + e.GetType().Name + ": " + e.Message;
             DebugLog.Write("Present postfix: " + FrameGenHost.LastError);
         }
@@ -530,13 +549,14 @@ public static class FrameGenRuntime
             device, context, depth, (uint)Width, (uint)Height, InvViewProj, ViewProj, PrevViewProj);
     }
 
-    private static void ExtraPresent()
+    private static bool ExtraPresent()
     {
         var swap = MyRender11.m_swapchain;
         if (swap == null)
-            return;
+            return false;
         swap.Present(0, PresentFlags.None);
         NoteExtraPresent();
+        return true;
     }
 
     /// <summary>

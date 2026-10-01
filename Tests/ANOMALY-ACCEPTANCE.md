@@ -14,9 +14,15 @@ must be readable and Off. Missing probe metadata fails closed.
 
 Run `dotnet run --project Tests/AnomalyAcceptance.csproj`.
 The harness links the production reflection consumer and reset policy. It checks
-conventions, all four current probes, unknown probe metadata, resize rejection,
+conventions, all four current probes, unknown probe metadata, internal-size acceptance,
 resource replacement, invalid history, unavailable/null buffers, cuts and source resets.
+It also verifies late registry attachment after a cached negative discovery.
 It does not exercise D3D, FrameGen, or certify rendered image quality.
+
+Run `dotnet run --project Tests/RuntimeRegression.csproj -c Release` for production
+camera-history and real WARP motion-direction/state/resize checks plus insertion
+failure recovery. Test projects have separate restore/output directories and may
+run concurrently. Live HUD and display-event acceptance still requires the game.
 
 ## In-game acceptance (pending)
 

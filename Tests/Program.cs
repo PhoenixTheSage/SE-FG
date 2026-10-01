@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Reflection.Emit;
 using ClientPlugin.FrameGen;
 
 public static class Program
@@ -41,6 +42,19 @@ public static class Program
         Assert(VelocityAcceptance.ResetReason(false,false,true,false,false,true) == "camera-cut", "cut resets");
         Assert(VelocityAcceptance.ResetReason(true,false,false,false,false,false).Contains("invalid-history"), "resize resets");
         Assert(VelocityAcceptance.ResetReason(false,false,true,false,true,false) == "source-change", "source switch resets");
+        AnomalyHook.Reset();
+        AnomalyHook.Probe();
+        Assert(!AnomalyHook.RegistryFound, "optional registry initially absent");
+        var lateAssembly = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("LateAnomalyAcceptance"), AssemblyBuilderAccess.Run);
+        var lateType = lateAssembly.DefineDynamicModule("LateAnomaly").DefineType(AnomalyHook.RegistryTypeName,
+            TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed);
+        var active = lateType.DefineProperty("Active", PropertyAttributes.None, typeof(object), null);
+        var getter = lateType.DefineMethod("get_Active", MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.SpecialName,
+            typeof(object), Type.EmptyTypes);
+        var il = getter.GetILGenerator(); il.Emit(OpCodes.Ldnull); il.Emit(OpCodes.Ret);
+        active.SetGetMethod(getter); lateType.CreateType();
+        AnomalyHook.Probe();
+        Assert(AnomalyHook.RegistryFound, "late optional registry attaches despite negative discovery cache");
         Console.WriteLine("All consumer contract and reset tests passed. GPU/visual acceptance remains manual.");
     }
     static bool Read(out IntPtr p) => AnomalyHook.TryGetLive(1280,720,out p,out _);
@@ -73,5 +87,5 @@ namespace VRage.Utils
 }
 namespace VRage.Render11.Resources
 {
-    public interface ISrvBindable { }
+    public interface ISrvBindable { SharpDX.Direct3D11.ShaderResourceView Srv { get; } }
 }

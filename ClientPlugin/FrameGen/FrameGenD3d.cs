@@ -29,6 +29,10 @@ internal static class FrameGenD3d
     private static Texture2D _sceneCopy;
     private static Texture2D _hudCopy;
     private static RenderTargetView _hudCopyRtv;
+    private static RenderTargetView _sceneCopyRtv;
+    private static ShaderResourceView _sceneCopySrv, _currCopySrv, _hudCopySrv, _interpCopySrv;
+    private static Texture2D _externalMotion;
+    private static ShaderResourceView _externalMotionSrv;
     private static uint _copyW;
     private static uint _copyH;
     private static Format _copyFmt = Format.Unknown;
@@ -61,6 +65,7 @@ internal static class FrameGenD3d
 
     internal static void Release()
     {
+        D3dStateScope.Release();
         ReleaseMvPipeline();
         ReleaseCopies();
         ReleaseMvShaders();
@@ -92,6 +97,7 @@ internal static class FrameGenD3d
             return IntPtr.Zero;
         }
 
+        using var state = new D3dStateScope(context);
         if (!EnsureMvShaders(device) || !EnsureMvTarget(device, width, height))
             return IntPtr.Zero;
 
@@ -122,6 +128,7 @@ internal static class FrameGenD3d
             return IntPtr.Zero;
         }
 
+        SetFullscreenState(context);
         context.Rasterizer.SetViewport(0, 0, width, height, 0f, 1f);
         context.InputAssembler.InputLayout = null;
         context.InputAssembler.PrimitiveTopology = SharpDX.Direct3D.PrimitiveTopology.TriangleList;
@@ -200,6 +207,7 @@ internal static class FrameGenD3d
     {
         if (context == null || source == null || dest == null)
             return;
+        using var state = new D3dStateScope(context);
         UnbindPipeline(context);
         context.CopyResource(source, dest);
     }
@@ -219,6 +227,7 @@ internal static class FrameGenD3d
     {
         if (device == null || context == null || source == null || _sceneCopy == null)
             return false;
+        using var state = new D3dStateScope(context);
         if (!TryGetTexture2D(source, out var srcTex))
             return false;
 
@@ -264,20 +273,21 @@ internal static class FrameGenD3d
             }
             try
             {
-                rtv = new RenderTargetView(device, _sceneCopy);
+                _sceneCopyRtv ??= new RenderTargetView(device, _sceneCopy);
+                rtv = _sceneCopyRtv;
             }
             catch
             {
-                rtv = new RenderTargetView(device, _sceneCopy, new RenderTargetViewDescription
+                _sceneCopyRtv ??= new RenderTargetView(device, _sceneCopy, new RenderTargetViewDescription
                 {
                     Format = _sceneCopy.Description.Format,
                     Dimension = RenderTargetViewDimension.Texture2D
                 });
+                rtv = _sceneCopyRtv;
             }
 
             UnbindPipeline(context);
-            context.OutputMerger.BlendState = null;
-            context.OutputMerger.DepthStencilState = null;
+            SetFullscreenState(context);
             context.Rasterizer.SetViewport(
                 0, 0, _sceneCopy.Description.Width, _sceneCopy.Description.Height, 0f, 1f);
             context.InputAssembler.InputLayout = null;
@@ -298,9 +308,9 @@ internal static class FrameGenD3d
         }
         finally
         {
-            DisposeView(ref rtv);
+            DisposeTransientRtv(ref rtv);
             if (ownSrv)
-                DisposeView(ref srv);
+                DisposeTransientSrv(ref srv);
         }
     }
 
@@ -418,6 +428,8 @@ internal static class FrameGenD3d
             return -1;
         }
 
+        using var state = new D3dStateScope(context);
+
         if (!EnsureInterpolateShaders(device) ||
             !EnsureInterpolatorTargets(device, width, height, colorTex.Description.Format))
             return -2;
@@ -461,6 +473,7 @@ internal static class FrameGenD3d
             context.UnmapSubresource(_csCb, 0);
 
             UnbindPipeline(context);
+            context.SetPredication(null, false);
             context.ComputeShader.Set(_cs);
             context.ComputeShader.SetConstantBuffer(0, _csCb);
             context.ComputeShader.SetSampler(0, _csSampler);
@@ -489,7 +502,7 @@ internal static class FrameGenD3d
         }
         finally
         {
-            DisposeView(ref currSrv);
+            DisposeTransientSrv(ref currSrv);
             if (mvWrap != null)
                 DisposeView(ref mvSrv);
             DisposeView(ref mvWrap);
@@ -784,6 +797,35 @@ internal static class FrameGenD3d
     private static bool TryCreateColorSrv(Device device, Resource resource, Format resourceFormat,
         out ShaderResourceView srv, bool preferSrgbView = true)
     {
+        if (preferSrgbView)
+        {
+            if (ReferenceEquals(resource, _sceneCopy))
+                return EnsureColorSrv(device, resource, resourceFormat, ref _sceneCopySrv, out srv);
+            if (ReferenceEquals(resource, _currCopy))
+                return EnsureColorSrv(device, resource, resourceFormat, ref _currCopySrv, out srv);
+            if (ReferenceEquals(resource, _hudCopy))
+                return EnsureColorSrv(device, resource, resourceFormat, ref _hudCopySrv, out srv);
+            if (ReferenceEquals(resource, _interpCopy))
+                return EnsureColorSrv(device, resource, resourceFormat, ref _interpCopySrv, out srv);
+        }
+        return CreateColorSrv(device, resource, resourceFormat, out srv, preferSrgbView);
+    }
+
+    private static bool EnsureColorSrv(Device device, Resource resource, Format format,
+        ref ShaderResourceView cached, out ShaderResourceView srv)
+    {
+        if (cached == null && !CreateColorSrv(device, resource, format, out cached))
+        {
+            srv = null;
+            return false;
+        }
+        srv = cached;
+        return true;
+    }
+
+    private static bool CreateColorSrv(Device device, Resource resource, Format resourceFormat,
+        out ShaderResourceView srv, bool preferSrgbView = true)
+    {
         srv = null;
         var preferSrgb = preferSrgbView && (IsSrgb(resourceFormat) || IsTypelessRgba(resourceFormat));
         var formats = preferSrgb
@@ -831,9 +873,19 @@ internal static class FrameGenD3d
             return false;
         if (_mvTex != null && _mvSrv != null && _mvTex.NativePointer == motion)
         {
+            DisposeView(ref _externalMotionSrv);
+            DisposeView(ref _externalMotion);
             srv = _mvSrv;
             return true;
         }
+
+        if (_externalMotion != null && _externalMotion.NativePointer == motion)
+        {
+            srv = _externalMotionSrv;
+            return true;
+        }
+        DisposeView(ref _externalMotionSrv);
+        DisposeView(ref _externalMotion);
 
         var iid = typeof(Texture2D).GUID;
         IntPtr queried = IntPtr.Zero;
@@ -853,6 +905,11 @@ internal static class FrameGenD3d
                 Dimension = SharpDX.Direct3D.ShaderResourceViewDimension.Texture2D,
                 Texture2D = { MipLevels = 1 }
             });
+            // The QI reference pins the resource, so its address cannot be
+            // recycled while cached. Keep one external resource only.
+            _externalMotion = wrap;
+            _externalMotionSrv = srv;
+            wrap = null;
             return true;
         }
         catch
@@ -900,8 +957,9 @@ internal static class FrameGenD3d
     {
         // t1 == t2 → hudPx is 0. Interpolant only; PostPP persistents and Keen
         // sprites are applied after this so UiBkOpacity cannot stack.
-        if (_uavSrv == null || _sceneCopy == null)
+        if (device == null || context == null || dest == null || _uavSrv == null || _sceneCopy == null)
             return false;
+        using var state = new D3dStateScope(context);
         return BlitComposite(device, context, dest, _uavSrv, _sceneCopy, _sceneCopy);
     }
 
@@ -918,6 +976,8 @@ internal static class FrameGenD3d
         var diffSrc = diffAgainstPostPpCopy && _currCopy != null ? _currCopy : _sceneCopy;
         if (diffSrc == null)
             return false;
+
+        using var state = new D3dStateScope(context);
 
         UnbindPipeline(context);
         try
@@ -939,7 +999,7 @@ internal static class FrameGenD3d
         }
         finally
         {
-            DisposeView(ref composedSrv);
+            DisposeTransientSrv(ref composedSrv);
         }
     }
 
@@ -970,6 +1030,8 @@ internal static class FrameGenD3d
 
             try
             {
+                // Do not retain a swapchain view across frames: ResizeBuffers
+                // requires all plugin references to the backbuffer released.
                 rtv = new RenderTargetView(device, dest);
             }
             catch
@@ -987,8 +1049,7 @@ internal static class FrameGenD3d
             context.UnmapSubresource(_blitCb, 0);
 
             UnbindPipeline(context);
-            context.OutputMerger.BlendState = null;
-            context.OutputMerger.DepthStencilState = null;
+            SetFullscreenState(context);
             context.Rasterizer.SetViewport(0, 0, destTex.Description.Width, destTex.Description.Height, 0f, 1f);
             context.InputAssembler.InputLayout = null;
             context.InputAssembler.PrimitiveTopology = SharpDX.Direct3D.PrimitiveTopology.TriangleList;
@@ -1011,9 +1072,9 @@ internal static class FrameGenD3d
         }
         finally
         {
-            DisposeView(ref rtv);
-            DisposeView(ref hudSrv);
-            DisposeView(ref sceneSrv);
+            DisposeTransientRtv(ref rtv);
+            DisposeTransientSrv(ref hudSrv);
+            DisposeTransientSrv(ref sceneSrv);
         }
     }
 
@@ -1047,6 +1108,17 @@ internal static class FrameGenD3d
             FrameGenHost.SetError("failed to create blit pipeline: " + e.GetType().Name);
             return false;
         }
+    }
+
+    private static void SetFullscreenState(DeviceContext context)
+    {
+        context.OutputMerger.BlendState = null;
+        context.OutputMerger.DepthStencilState = null;
+        context.Rasterizer.State = null; // Solid, no scissor; fullscreen VS uses default winding.
+        context.GeometryShader.Set(null);
+        context.HullShader.Set(null);
+        context.DomainShader.Set(null);
+        context.SetPredication(null, false);
     }
 
     private static bool IsSrgb(Format format)
@@ -1131,6 +1203,11 @@ internal static class FrameGenD3d
 
     private static void ReleaseCopies()
     {
+        DisposeView(ref _sceneCopySrv);
+        DisposeView(ref _currCopySrv);
+        DisposeView(ref _hudCopySrv);
+        DisposeView(ref _interpCopySrv);
+        DisposeView(ref _sceneCopyRtv);
         DisposeView(ref _hudCopyRtv);
         DisposeView(ref _currCopy);
         DisposeView(ref _interpCopy);
@@ -1156,6 +1233,8 @@ internal static class FrameGenD3d
 
     private static void ReleaseInterpolatorTargets()
     {
+        DisposeView(ref _externalMotionSrv);
+        DisposeView(ref _externalMotion);
         DisposeView(ref _uav);
         DisposeView(ref _uavSrv);
         DisposeView(ref _uavTex);
@@ -1184,6 +1263,21 @@ internal static class FrameGenD3d
             return;
         try { view.Dispose(); }
         catch { /* device tearing down */ }
+        view = null;
+    }
+
+    private static void DisposeTransientSrv(ref ShaderResourceView view)
+    {
+        if (!ReferenceEquals(view, _sceneCopySrv) && !ReferenceEquals(view, _currCopySrv) &&
+            !ReferenceEquals(view, _hudCopySrv) && !ReferenceEquals(view, _interpCopySrv))
+            DisposeView(ref view);
+        view = null;
+    }
+
+    private static void DisposeTransientRtv(ref RenderTargetView view)
+    {
+        if (!ReferenceEquals(view, _sceneCopyRtv))
+            DisposeView(ref view);
         view = null;
     }
 }

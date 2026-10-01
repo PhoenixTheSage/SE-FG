@@ -116,7 +116,6 @@ public static class FrameGenHost
         }
 
         var motion = FrameGenD3d.EnsureMotionOrZero(device, context, motionVectors, width, height);
-        FrameGenD3d.UnbindPipeline(context);
         var code = FrameGenD3d.Interpolate(
             device, context, color, depth, motion, output, width, height, reset, mvScaleX, mvScaleY, volumeReactive);
         return code;

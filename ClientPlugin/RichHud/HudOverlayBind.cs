@@ -15,6 +15,7 @@ internal static class HudOverlayBind
     public const string OverlayId = "se-framegen";
 
     static readonly object Gate = new();
+    static readonly DiscoveryRetry Discovery = new();
     static bool _installed;
 
     public static bool Installed
@@ -32,6 +33,8 @@ internal static class HudOverlayBind
         {
             if (_installed)
                 return true;
+            if (!Discovery.ShouldRetry())
+                return false;
 
             Assembly[] assemblies;
             try
@@ -91,6 +94,9 @@ internal static class HudOverlayBind
     public static void Reset()
     {
         lock (Gate)
+        {
             _installed = false;
+            Discovery.Reset();
+        }
     }
 }
