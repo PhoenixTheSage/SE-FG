@@ -167,3 +167,34 @@ rules. The regression suite includes distant asteroid/sky and neighboring voxel
 depths, replaced appearance, persistent false motion on stationary detail, and
 successful recovery and coherent near/far motion. Live confirmation remains
 necessary because the reported intermittent scene has not been captured here.
+
+## Ship silhouettes and paired depth history (2026-10-01)
+
+Orbiting the third-person camera around a stopped or piloted ship can expose
+pixels that previously contained the ship. Checking both color images against
+only current depth admitted the old silhouette into current sky, and admitted
+sky history into newly exposed geometry. This reproduced in six SDR/HDR GPU
+cases, including fractional filter footprints.
+
+FrameGen now retains native depth alongside previous color. Each warped color
+footprint is checked against depth from its own real frame; the existing current
+silhouette guard remains. Rejected pixels keep their current real color, and
+both histories continue advancing together. Internal-depth size or format
+changes reseed both histories even when the output color size stays fixed.
+Missing depth invalidates the pair. Cached history is released on resize or
+shutdown, and the new CS SRV slot is restored with the host pipeline state.
+
+This adds one GPU depth copy per captured frame and one depth gather on moving
+pixels. Native R32G8X24 history costs about 15.8 MiB at 1080p or 28.1 MiB at
+1440p; internal/DRS depth uses its own smaller dimensions. A standalone RTX 5070
+Ti benchmark with alternating coherent patterns measured approximately
+0.03–0.04 ms more interpolation time at 1080p and 0.06–0.07 ms at 1440p against
+1.4.1. These timings exclude game contention, HUD, and DXGI presentation.
+
+The relative depth comparison is conservative: changing camera/surface depth
+can suppress otherwise valid interpolation. It does not reconstruct hidden
+surfaces or solve motion at intermediate silhouettes. `WarpRegression` checks
+ship/sky history rejection and recovery while coherent interior motion remains
+active. `RuntimeRegression` checks native depth formats, internal-depth resize,
+missing-depth recovery, and the new binding on both D3D state paths. Live
+camera-orbit confirmation with Anomaly/GBuffer remains necessary.

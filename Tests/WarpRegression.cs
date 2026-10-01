@@ -83,7 +83,8 @@ static class WarpRegression
         Func<int, int, bool> fallbackAt, int motionWidth = W, int motionHeight = H,
         Func<int, int, int> motionX = null, Func<int, int, float> colorAt = null,
         bool fractional = false, bool fractionalY = false, bool coherentHistory = false,
-        Func<int, int, float> previousColorAt = null, bool recoverHistory = false)
+        Func<int, int, float> previousColorAt = null, bool recoverHistory = false,
+        Func<int, int, float> previousDepthAt = null)
     {
         FrameGenD3d.Release();
         using var source = Texture(Format.R32G32B32A32_Float);
@@ -120,14 +121,18 @@ static class WarpRegression
             }
             if (previousColorAt != null) previousColors[(y * W + x) * 4] = previousColorAt(x, y);
         }
-        Upload(source, previousColors, 16); Upload(depth, depths, 4); Upload(motion, vectors, 4);
+        var previousDepths = (float[])depths.Clone();
+        if (previousDepthAt != null)
+            for (int y = 0; y < H; y++) for (int x = 0; x < W; x++)
+                previousDepths[y * W + x] = previousDepthAt(x, y);
+        Upload(source, previousColors, 16); Upload(depth, previousDepths, 4); Upload(motion, vectors, 4);
         if (!FrameGenD3d.EnsureColorCopies(device, dest.Description) ||
             !FrameGenD3d.CopyOrStretchToScene(device, context, source, Format.R32G32B32A32_Float, sourceSrv))
             throw new Exception(FrameGenHost.Error);
         var previousReference = Read(FrameGenD3d.SceneCopy);
         if (FrameGenD3d.Interpolate(device, context, FrameGenD3d.SceneCopy, depth, motion.NativePointer,
                 FrameGenD3d.InterpCopy, W, H, 1) != 1) throw new Exception("seed");
-        Upload(source, colors, 16);
+        Upload(source, colors, 16); Upload(depth, depths, 4);
         if (!FrameGenD3d.CopyOrStretchToScene(device, context, source, Format.R32G32B32A32_Float, sourceSrv))
             throw new Exception(FrameGenHost.Error);
         var reference = Read(FrameGenD3d.SceneCopy);
@@ -224,6 +229,21 @@ static class WarpRegression
                         colorAt: (x, y) => x % 3 == 0 ? .01f : .4f);
                     Run("far coherent motion still interpolates", format, 2, 0, (x, y) => 1e-5f,
                         (x, y) => x == 0 || x == W - 1, coherentHistory: true);
+                    // Orbiting camera uncovers sky formerly occupied by the ship.
+                    // Current depth alone cannot identify the old silhouette.
+                    Run("old ship silhouette cannot ghost onto sky", format, 4, 0, (x, y) => 0f,
+                        (x, y) => x >= 28 && x <= 34 && y > 2 && y < H - 3,
+                        colorAt: (x, y) => .01f,
+                        previousColorAt: (x, y) => x >= 30 && x <= 36 ? .6f : .01f,
+                        previousDepthAt: (x, y) => x >= 30 && x <= 36 ? .5f : 0f);
+                    Run("fractional old ship silhouette footprint", format, 2, 0, (x, y) => 0f,
+                        (x, y) => x == 28 && y > 2 && y < H - 3, fractional: true,
+                        colorAt: (x, y) => .01f,
+                        previousColorAt: (x, y) => x == 30 ? .6f : .01f,
+                        previousDepthAt: (x, y) => x == 30 ? .5f : 0f);
+                    Run("newly exposed ship cannot use sky history", format, 2, 0, (x, y) => .5f,
+                        (x, y) => x > 4 && x < W - 4 && y > 2 && y < H - 3,
+                        coherentHistory: true, previousDepthAt: (x, y) => 0f, recoverHistory: true);
                 }
             }
             finally { context.ClearState(); FrameGenD3d.Release(); }

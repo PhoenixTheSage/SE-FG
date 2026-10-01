@@ -208,12 +208,70 @@ static class RuntimeRegression
         retry.Reset(); Check(retry.ShouldRetry(), "discovery reset retries immediately");
     }
 
+    static void DepthHistory(Device d, DeviceContext c, bool legacy = false)
+    {
+        FrameGenD3d.Release();
+        if (legacy)
+        {
+            typeof(D3dStateScope).GetField("_probed", BindingFlags.Static | BindingFlags.NonPublic).SetValue(null, true);
+            typeof(D3dStateScope).GetField("_contextPointer", BindingFlags.Static | BindingFlags.NonPublic).SetValue(null, c.NativePointer);
+        }
+        using var color = Texture(d, Format.R16G16B16A16_Float, BindFlags.ShaderResource | BindFlags.RenderTarget);
+        using var colorRtv = new RenderTargetView(d, color);
+        using var mv = Texture(d, Format.R16G16_Float, BindFlags.ShaderResource | BindFlags.RenderTarget);
+        using var mvRtv = new RenderTargetView(d, mv);
+        using var hostSrv = new ShaderResourceView(d, color);
+        c.ClearRenderTargetView(mvRtv, new RawColor4(4, 0, 0, 0));
+        Check(FrameGenD3d.EnsureColorCopies(d, color.Description), "depth history keeps output allocation");
+        foreach (var format in legacy ? new[] { Format.R32G8X24_Typeless } :
+            new[] { Format.R32G8X24_Typeless, Format.R24G8_Typeless, Format.R32_Typeless, Format.R16_Typeless })
+        foreach (var size in legacy ? new[] { 64 } : new[] { 64, 32, 64 })
+        {
+            var viewFormat = format == Format.R32G8X24_Typeless ? Format.D32_Float_S8X24_UInt :
+                format == Format.R24G8_Typeless ? Format.D24_UNorm_S8_UInt :
+                format == Format.R32_Typeless ? Format.D32_Float : Format.D16_UNorm;
+            using var depth = Texture(d, format, BindFlags.ShaderResource | BindFlags.DepthStencil, size, 16);
+            using var dsv = new DepthStencilView(d, depth, new DepthStencilViewDescription {
+                Format = viewFormat, Dimension = DepthStencilViewDimension.Texture2D });
+            c.ClearRenderTargetView(colorRtv, new RawColor4(.6f, .6f, .6f, 1));
+            c.ClearDepthStencilView(dsv, DepthStencilClearFlags.Depth, .5f, 0);
+            // No explicit reset: format/internal depth size changes must seed
+            // both histories even though the output color size is unchanged.
+            Check(FrameGenD3d.Interpolate(d, c, color, depth, mv.NativePointer,
+                FrameGenD3d.InterpCopy, 64, 16, 0) == 1, "native depth change reseeds " + format + "/" + size);
+            c.ClearRenderTargetView(colorRtv, new RawColor4(.01f, .01f, .01f, 1));
+            c.ClearDepthStencilView(dsv, DepthStencilClearFlags.Depth, 0f, 0);
+            c.ComputeShader.SetShaderResource(5, hostSrv);
+            Check(FrameGenD3d.Interpolate(d, c, color, depth, mv.NativePointer,
+                FrameGenD3d.InterpCopy, 64, 16, 0) == 0, "native depth history dispatch " + format + "/" + size);
+            var saved = c.ComputeShader.GetShaderResources(5, 1);
+            try { Check(saved[0]?.NativePointer == hostSrv.NativePointer, "history SRV slot restores host binding " + format + "/" + size); }
+            finally { saved[0]?.Dispose(); }
+            c.ComputeShader.SetShaderResource(5, null);
+
+            var desc = FrameGenD3d.InterpCopy.Description;
+            desc.BindFlags = BindFlags.None; desc.Usage = ResourceUsage.Staging; desc.CpuAccessFlags = CpuAccessFlags.Read;
+            using var staging = new Texture2D(d, desc);
+            c.CopyResource(FrameGenD3d.InterpCopy, staging);
+            var box = c.MapSubresource(staging, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
+            try { Check(Math.Abs(Half((ushort)Marshal.ReadInt16(box.DataPointer, 8 * box.RowPitch + 32 * 8)) - .01) < .0001,
+                "native previous ship coverage rejects sky ghost " + format + "/" + size); }
+            finally { c.UnmapSubresource(staging, 0); }
+        }
+        Check(FrameGenD3d.Interpolate(d, c, color, null, mv.NativePointer,
+            FrameGenD3d.InterpCopy, 64, 16, 0) == 1, "missing depth invalidates paired history");
+        using var restoredDepth = Texture(d, Format.R32_Typeless, BindFlags.ShaderResource | BindFlags.DepthStencil);
+        Check(FrameGenD3d.Interpolate(d, c, color, restoredDepth, mv.NativePointer,
+            FrameGenD3d.InterpCopy, 64, 16, 0) == 1, "restored depth seeds before interpolation");
+    }
+
     static void Main()
     {
         Recovery(); Discovery();
         using var device = new Device(DriverType.Warp, DeviceCreationFlags.None);
         using var context = device.ImmediateContext;
-        try { CameraAndState(device, context); PerspectiveCamera(device, context); Resize(device, context); }
+        try { CameraAndState(device, context); PerspectiveCamera(device, context); Resize(device, context);
+            DepthHistory(device, context); DepthHistory(device, context, legacy: true); }
         finally { context.ClearState(); FrameGenD3d.Release(); }
     }
 }

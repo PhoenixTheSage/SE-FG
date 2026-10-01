@@ -22,6 +22,7 @@ Texture2D CurrColor : register(t1);
 Texture2D DepthTex : register(t2);
 Texture2D MotionTex : register(t3);
 Texture2D VolumeReactive : register(t4);
+Texture2D PrevDepthTex : register(t5);
 SamplerState LinearClamp : register(s0);
 RWTexture2D<float4> Output : register(u0);
 
@@ -33,17 +34,17 @@ float DepthAtUv(float2 uv)
     return DepthTex.Load(int3(pixel, 0)).r;
 }
 
-float DepthFootprintConfidence(float2 uv, float centerDepth)
+float DepthFootprintConfidence(Texture2D depth, float2 uv, float centerDepth)
 {
     // Color is bilinear. Reject a footprint that mixes foreground/background
     // rather than letting filtered depth invent a surface between them.
     uint width, height;
-    DepthTex.GetDimensions(width, height);
+    depth.GetDimensions(width, height);
     float2 pos = uv * float2(width, height) - 0.5;
     float2 weight = frac(pos);
     // Gather order: lower-left, lower-right, upper-right, upper-left.
     // Fetch the full footprint together instead of four dependent loads.
-    float4 samples = DepthTex.GatherRed(LinearClamp, uv);
+    float4 samples = depth.GatherRed(LinearClamp, uv);
     if (!all(isfinite(samples)) || !isfinite(centerDepth))
         return 0.0;
     // Complementary depth approaches zero for distant voxels. A 1e-4
@@ -114,9 +115,13 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     }
 
     float centerDepth = DepthAtUv(uv);
-    float wPrev = DepthFootprintConfidence(uvPrev, centerDepth);
-    float wCurr = DepthFootprintConfidence(uvCurr, centerDepth);
-    // There is no previous-depth history to prove disoccluded coverage.
+    // Each color footprint needs coverage in its own real frame. Testing the
+    // old ship silhouette against current sky depth admits ghost trails.
+    float wPrev = DepthFootprintConfidence(PrevDepthTex, uvPrev, centerDepth);
+    float wCurr = DepthFootprintConfidence(DepthTex, uvCurr, centerDepth);
+    // Keep the current-frame boundary guard as well: without a motion solve
+    // or splat we cannot prove which surface owns a midpoint at a silhouette.
+    wPrev = min(wPrev, DepthFootprintConfidence(DepthTex, uvPrev, centerDepth));
     // Preserve the real pixel when either warp cannot stay on its surface.
     if (min(wPrev, wCurr) < 0.5)
     {

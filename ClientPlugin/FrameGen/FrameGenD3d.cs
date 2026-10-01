@@ -49,6 +49,8 @@ internal static class FrameGenD3d
     private static SamplerState _csSampler;
     private static Texture2D _prevColor;
     private static ShaderResourceView _prevSrv;
+    private static Texture2D _prevDepth;
+    private static ShaderResourceView _prevDepthSrv;
     private static Texture2D _uavTex;
     private static UnorderedAccessView _uav;
     private static uint _fgW;
@@ -434,20 +436,28 @@ internal static class FrameGenD3d
             !EnsureInterpolatorTargets(device, width, height, colorTex.Description.Format))
             return -2;
 
-        if (reset != 0 || !_hasPrev || depth == null || motionVectors == IntPtr.Zero)
+        Texture2D depthTex = null;
+        if (depth != null && (!TryGetTexture2D(depth, out depthTex) ||
+            !EnsureDepthSrv(device, depth, depthTex.Description) ||
+            !EnsureDepthHistory(device, depthTex.Description)))
         {
-            context.CopyResource(color, _prevColor);
-            context.CopyResource(color, output);
-            _hasPrev = true;
-            FrameGenHost.SetError("skipped");
-            return 1;
+            _hasPrev = false;
+            FrameGenHost.SetError("failed to create depth history/SRV");
+            return -5;
         }
 
-        if (!TryGetTexture2D(depth, out var depthTex) ||
-            !EnsureDepthSrv(device, depth, depthTex.Description))
+        if (reset != 0 || !_hasPrev || depthTex == null || motionVectors == IntPtr.Zero)
         {
-            FrameGenHost.SetError("failed to create depth SRV");
-            return -5;
+            UnbindPipeline(context);
+            context.CopyResource(color, _prevColor);
+            context.CopyResource(color, output);
+            if (depthTex != null)
+                context.CopyResource(depth, _prevDepth);
+            // Color and depth history must describe the same real frame.
+            // A frame without depth cannot seed a usable interpolation pair.
+            _hasPrev = depthTex != null;
+            FrameGenHost.SetError("skipped");
+            return 1;
         }
 
         ShaderResourceView currSrv = null;
@@ -482,6 +492,7 @@ internal static class FrameGenD3d
             context.ComputeShader.SetShaderResource(2, _cachedDepthSrv);
             context.ComputeShader.SetShaderResource(3, mvSrv);
             context.ComputeShader.SetShaderResource(4, volumeReactive);
+            context.ComputeShader.SetShaderResource(5, _prevDepthSrv);
             context.ComputeShader.SetUnorderedAccessView(0, _uav);
             context.Dispatch((int)((width + 7) / 8), (int)((height + 7) / 8), 1);
             UnbindPipeline(context);
@@ -491,6 +502,7 @@ internal static class FrameGenD3d
                 outTex.Description.Format == _uavTex.Description.Format)
                 context.CopyResource(_uavTex, output);
             context.CopyResource(color, _prevColor);
+            context.CopyResource(depth, _prevDepth);
             _hasPrev = true;
             FrameGenHost.SetError("ok");
             return 0;
@@ -792,6 +804,47 @@ internal static class FrameGenD3d
             }
         }
         return false;
+    }
+
+    private static bool EnsureDepthHistory(Device device, Texture2DDescription desc)
+    {
+        if (_prevDepth != null)
+        {
+            var old = _prevDepth.Description;
+            if (old.Width == desc.Width && old.Height == desc.Height && old.Format == desc.Format &&
+                old.MipLevels == desc.MipLevels && old.ArraySize == desc.ArraySize &&
+                old.SampleDescription.Equals(desc.SampleDescription))
+                return true;
+        }
+
+        DisposeView(ref _prevDepthSrv);
+        DisposeView(ref _prevDepth);
+        _hasPrev = false; // Also reseed color when internal/DRS depth changes.
+        if (desc.SampleDescription.Count != 1 || desc.ArraySize != 1)
+            return false;
+        try
+        {
+            // Copy the native depth allocation on the GPU; no CPU readback or
+            // depth conversion. Its size may differ from the output color.
+            desc.Usage = ResourceUsage.Default;
+            desc.BindFlags = BindFlags.ShaderResource;
+            desc.CpuAccessFlags = CpuAccessFlags.None;
+            desc.OptionFlags = ResourceOptionFlags.None;
+            _prevDepth = new Texture2D(device, desc);
+            _prevDepthSrv = new ShaderResourceView(device, _prevDepth, new ShaderResourceViewDescription
+            {
+                Format = _cachedDepthSrv.Description.Format,
+                Dimension = SharpDX.Direct3D.ShaderResourceViewDimension.Texture2D,
+                Texture2D = { MipLevels = 1 }
+            });
+            return true;
+        }
+        catch
+        {
+            DisposeView(ref _prevDepthSrv);
+            DisposeView(ref _prevDepth);
+            return false;
+        }
     }
 
     private static bool TryCreateColorSrv(Device device, Resource resource, Format resourceFormat,
@@ -1240,6 +1293,8 @@ internal static class FrameGenD3d
         DisposeView(ref _uavTex);
         DisposeView(ref _prevSrv);
         DisposeView(ref _prevColor);
+        DisposeView(ref _prevDepthSrv);
+        DisposeView(ref _prevDepth);
         _fgW = _fgH = 0;
         _fgFmt = Format.Unknown;
         _hasPrev = false;
