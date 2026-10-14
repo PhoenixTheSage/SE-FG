@@ -140,9 +140,6 @@ internal static class AnomalyTerminalHook
             (Func<bool>)RichHudOptions.GetShowOverlay,
             (Action<bool>)RichHudOptions.SetShowOverlay,
             "Corner FPS line (game and displayed). Requires Rich HUD Master.");
-        Invoke(type, page, "Button", "Show Status",
-            (Action)RichHudOptions.ShowStatus,
-            "GPU, FrameGen support, and Anomaly buffer status");
     }
 
     static void Invoke(Type type, object instance, string name, params object[] args)

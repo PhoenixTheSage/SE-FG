@@ -44,6 +44,10 @@ Optional [Rich HUD Master](https://steamcommunity.com/workshop/filedetails/?id=1
 
 Debug with Pulsar `Legacy.exe` / `Interim.exe` and `-sources`.
 
+Building the shared project also builds and deploys the matching DX11 companion
+for each Windows runtime. Source loading binds it to the live Pulsar settings
+assembly. See [initialization regressions](Tests/SATELLITE-INITIALIZATION.md).
+
 ## License
 
 Interpolator HLSL is original to this plugin. The algorithm follows AMD FidelityFX Super Resolution 3 Frame Interpolation as documented in the FidelityFX SDK (MIT).

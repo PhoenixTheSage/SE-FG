@@ -46,13 +46,13 @@ public class Config : INotifyPropertyChanged
     public static void ShowStatus()
     {
         var text = AnomalyRenderer.AllowDx11Device
-            ? Dx11Bridge.Call<string>("StatusText")
+            ? Dx11Bridge.StatusText
             : AnomalyRenderer.AllowGuestWork
                 ? FrameGenVulkan.StatusText()
                 : AnomalyRenderer.LinuxRequiresGuest
                     ? "Linux stays idle until Anomaly's Vulkan guest bus is open."
                     : "DX11 device path closed (" + AnomalyRenderer.ActiveName + ").";
-        MyGuiSandbox.AddScreen(new StatusScreen(text ?? ""));
+        MyGuiSandbox.AddScreen(new StatusScreen(PluginStatusPage.RendererLine + "\n" + (text ?? "No diagnostic report available")));
     }
 
     #endregion

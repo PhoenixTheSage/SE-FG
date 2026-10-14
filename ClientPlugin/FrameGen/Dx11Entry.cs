@@ -13,6 +13,7 @@ public static class Dx11Entry
     static Harmony deviceHarmony;
     static bool routed;
     static bool failed;
+    static string initializationError;
 
     public static void OnUpdate()
     {
@@ -38,6 +39,7 @@ public static class Dx11Entry
         {
             failed = true;
             var root = e.GetBaseException();
+            initializationError = root.ToString();
             MyLog.Default.Error("FrameGen DX11 update failed; device path disabled this session: " +
                                 root.GetType().Name + ": " + root.Message);
         }
@@ -55,6 +57,8 @@ public static class Dx11Entry
 
     public static string StatusText()
     {
+        if (failed)
+            return "FrameGen DX11 initialization failed:\n" + initializationError;
         GpuSupport.TryProbe();
         return FrameGenStatus.CurrentText;
     }

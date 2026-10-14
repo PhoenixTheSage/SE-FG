@@ -83,7 +83,7 @@ namespace ClientPlugin.FrameGen
 }
 namespace VRage.Utils
 {
-    public class MyLog { public static MyLog Default=new(); public void WriteLine(string s) {} public void Warning(string s) {} }
+    public class MyLog { public static MyLog Default=new(); public void WriteLine(string s) {} public void Warning(string s) {} public void Error(string s) {} }
 }
 namespace VRage.Render11.Resources
 {

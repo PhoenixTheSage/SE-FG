@@ -12,25 +12,43 @@ static class Dx11Bridge
 {
     static Type entry;
     static bool failed;
+    static string lastError;
+    static readonly object Gate = new();
+
+    public static string StatusText => Call<string>("StatusText") ??
+        "FrameGen DX11 is unavailable.\n" + (lastError ?? "Waiting for the DX11 companion.") +
+        "\nRenderer: " + AnomalyRenderer.ActiveName;
 
     public static void Ensure()
     {
-        if (entry != null || !AnomalyRenderer.AllowDx11Device)
+        lock (Gate)
+            EnsureLocked();
+    }
+
+    static void EnsureLocked()
+    {
+        if (entry != null || failed || !AnomalyRenderer.AllowDx11Device)
             return;
         string path = Resolve("SpaceEngineersFrameGen.Dx11.dll");
         if (!File.Exists(path))
         {
-            VRage.Utils.MyLog.Default.WriteLine("FrameGen: DX11 satellite missing at " + path);
+            var message = "DX11 satellite missing at " + path;
+            if (lastError != message)
+                VRage.Utils.MyLog.Default.WriteLine("FrameGen: " + message);
+            lastError = message;
             return;
         }
         try
         {
-            entry = Assembly.LoadFrom(path).GetType("ClientPlugin.FrameGen.Dx11Entry");
+            entry = SatelliteAssembly.Load(path, typeof(Dx11Bridge).Assembly).GetType("ClientPlugin.FrameGen.Dx11Entry", true);
+            lastError = null;
             VRage.Utils.MyLog.Default.WriteLine("FrameGen: DX11 satellite " + path);
         }
         catch (Exception e)
         {
-            VRage.Utils.MyLog.Default.WriteLine("FrameGen: DX11 satellite failed at " + path + ": " + e.GetType().Name);
+            lastError = "DX11 satellite failed at " + path + ": " + e.GetBaseException();
+            failed = true;
+            VRage.Utils.MyLog.Default.WriteLine("FrameGen: " + lastError);
         }
     }
 
@@ -52,6 +70,15 @@ static class Dx11Bridge
         return beside;
     }
 
+    public static bool Ready
+    {
+        get
+        {
+            Ensure();
+            return AnomalyRenderer.AllowDx11Device && entry != null && !failed;
+        }
+    }
+
     public static void Call(string name, params object[] args)
     {
         Invoke(name, args);
@@ -65,17 +92,21 @@ static class Dx11Bridge
 
     static object Invoke(string name, object[] args)
     {
-        if (failed)
+        if (failed || !AnomalyRenderer.AllowDx11Device)
             return null;
         Ensure();
         try
         {
-            return entry?.GetMethod(name)?.Invoke(null, args == null || args.Length == 0 ? null : args);
+            if (entry == null)
+                return null;
+            var method = entry.GetMethod(name) ?? throw new MissingMethodException(entry.FullName, name);
+            return method.Invoke(null, args == null || args.Length == 0 ? null : args);
         }
         catch (Exception e)
         {
             failed = true;
             var root = e.GetBaseException();
+            lastError = "DX11 " + name + " failed: " + root;
             VRage.Utils.MyLog.Default.WriteLine("FrameGen: DX11 " + name +
                                             " failed; satellite disabled this session: " +
                                             root.GetType().Name + ": " + root.Message);

@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup><BaseIntermediateOutputPath>obj/SatelliteRegression/</BaseIntermediateOutputPath></PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFrameworks>net48;net10.0</TargetFrameworks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems><LangVersion>latest</LangVersion>
+    <OutputPath>bin/SatelliteRegression/$(Configuration)/</OutputPath><PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SatelliteRegression.cs" />
+    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

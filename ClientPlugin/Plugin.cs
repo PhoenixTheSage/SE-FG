@@ -11,8 +11,8 @@ using VRage.Utils;
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("SpaceEngineersFrameGen.Dx11")]
 
 #if !LOCAL_BUILD
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.5.1.0")]
+[assembly: AssemblyFileVersion("1.5.1.0")]
 #endif
 
 namespace ClientPlugin;
@@ -60,6 +60,7 @@ public sealed class Plugin : IPlugin
         ConfigStorage.FlushPending(true);
         AnomalyTerminalHook.Reset();
         HudOverlayBind.Reset();
+        SatelliteAssembly.Reset();
         settingsGenerator = null;
         if (ReferenceEquals(Instance, this))
             Instance = null;
@@ -68,6 +69,7 @@ public sealed class Plugin : IPlugin
 
     public void Update()
     {
+        PluginStatusPage.TryInstall("FrameGen", Config.ShowStatus);
         if (disposed)
             return;
         AnomalyTerminalHook.TryInstall();
