@@ -23,8 +23,8 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
 
     <!-- Default versions; overridden by Version.Build.props  -->
-    <AssemblyVersion>1.4.2.0</AssemblyVersion>
-    <FileVersion>1.4.2.0</FileVersion>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
     <PathSeparator Condition="$([MSBuild]::IsOSPlatform('Windows'))">\</PathSeparator>
     <PathSeparator Condition="!$([MSBuild]::IsOSPlatform('Windows'))">/</PathSeparator>
 
@@ -253,10 +253,22 @@
       <HintPath>$(Bin64Dir)VRage.Render.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="VRage.Render11, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>$(Bin64Dir)VRage.Render11.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
+    <Compile Remove="FrameGen\Dx11Entry.cs" />
+    <Compile Remove="FrameGen\AnomalyHook.cs" />
+    <Compile Remove="FrameGen\FrameGenD3d.cs" />
+    <Compile Remove="FrameGen\FrameGenHost.cs" />
+    <Compile Remove="FrameGen\FrameGenRuntime.cs" />
+    <Compile Remove="FrameGen\GpuSupport.cs" />
+    <Compile Remove="FrameGen\D3dStateScope.cs" />
+    <Compile Remove="FrameGen\CameraHistory.cs" />
+    <Compile Remove="FrameGen\FrameInsertionState.cs" />
+    <Compile Remove="FrameGen\FrameGenStatus.cs" />
+    <Compile Remove="FrameGen\ShaderBytecode.cs" />
+    <Compile Remove="FrameGen\VelocityAcceptance.cs" />
+    <Compile Remove="FrameGen\PostPpHudSpace.cs" />
+    <Compile Remove="FrameGen\RenderTraceBind.cs" />
+    <Compile Remove="Patches\**\*.cs" />
+    <Compile Remove="Tools\GameAssembliesToPublicize.cs" />
     <Reference Include="VRage.Scripting, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
       <HintPath>$(Bin64Dir)VRage.Scripting.dll</HintPath>
       <Private>False</Private>
@@ -284,30 +296,6 @@
     </PackageReference>
   </ItemGroup>
 
-  <ItemGroup>
-    <Reference Include="SharpDX">
-      <HintPath>$(Bin64Dir)SharpDX.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="SharpDX.Direct3D11">
-      <HintPath>$(Bin64Dir)SharpDX.Direct3D11.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="SharpDX.DXGI">
-      <HintPath>$(Bin64Dir)SharpDX.DXGI.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-  </ItemGroup>
-
-  <PropertyGroup>
-    <PublicizerClearCacheOnClean>true</PublicizerClearCacheOnClean>
-    <PublicizerRuntimeStrategies>Unsafe;IgnoresAccessChecksTo</PublicizerRuntimeStrategies>
-    <PublicizerLogFilePath>$(MSBuildProjectDirectory)\Krafs.Publicizer.$(TargetFramework).log</PublicizerLogFilePath>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <Publicize Include="VRage.Render11"/>
-  </ItemGroup>
 
   <Target Name="VerifyProps" BeforeTargets="BeforeBuild">
     <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"

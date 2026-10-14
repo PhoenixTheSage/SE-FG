@@ -1,6 +1,6 @@
 # Space Engineers FrameGen
 
-Pulsar client plugin that adds **open-source frame generation** to Space Engineers 1 (DX11). It is not an upscaler. PluginHub compiles C# only — there is no custom native library.
+Pulsar client plugin that adds **open-source frame generation** to Space Engineers 1. On DX11 the warp and extra Present stay in `SpaceEngineersFrameGen.Dx11.dll`. On Vulkan the renderer runs that same warp and presents it immediately. It is not an upscaler. PluginHub compiles C# only — there is no custom native library in this plugin.
 
 Official AMD FSR 3 Frame Generation (optical flow + frame-interpolation swapchain) targets DX12 and Vulkan. This plugin runs an SM 5.0 bidirectional-warp interpolator through **SharpDX** on the game's D3D11 device (same pattern as SE-DLSS helper shaders and NGX: C# talks to D3D11; DXBC is baked in the plugin). Then it issues an extra DXGI Present of the interpolated color.
 

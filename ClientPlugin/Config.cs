@@ -45,8 +45,14 @@ public class Config : INotifyPropertyChanged
     // ReSharper disable once UnusedMember.Global
     public static void ShowStatus()
     {
-        GpuSupport.TryProbe();
-        MyGuiSandbox.AddScreen(new StatusScreen(FrameGenStatus.CurrentText));
+        var text = AnomalyRenderer.AllowDx11Device
+            ? Dx11Bridge.Call<string>("StatusText")
+            : AnomalyRenderer.AllowGuestWork
+                ? FrameGenVulkan.StatusText()
+                : AnomalyRenderer.LinuxRequiresGuest
+                    ? "Linux stays idle until Anomaly's Vulkan guest bus is open."
+                    : "DX11 device path closed (" + AnomalyRenderer.ActiveName + ").";
+        MyGuiSandbox.AddScreen(new StatusScreen(text ?? ""));
     }
 
     #endregion
@@ -64,7 +70,7 @@ public class Config : INotifyPropertyChanged
         if (propertyName == nameof(Enabled))
         {
             DebugLog.Write("config Enabled=" + enabled);
-            FrameGenRuntime.NotifyConfigChanged();
+            Dx11Bridge.Call("NotifyConfigChanged");
         }
         Plugin.RefreshConfigUi();
     }

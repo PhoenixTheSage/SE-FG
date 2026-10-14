@@ -134,7 +134,31 @@ internal static class AnomalyHook
         }
     }
 
+    static bool _probeFailed;
+
     public static void Probe()
+    {
+        if (_probeFailed)
+            return;
+        try
+        {
+            ProbeBody();
+        }
+        catch (Exception e)
+        {
+            // Harmony's JIT hook on .NET 10 throws ArgumentException while compiling
+            // this body (InvokeCompileMethod). That exception is unhandled in
+            // Plugin.Update and kills the process before the main menu.
+            _probeFailed = true;
+            var root = e.GetBaseException();
+            MyLog.Default.Error("FrameGen: Anomaly probe failed; camera motion only this session: " +
+                                root.GetType().Name + ": " + root.Message);
+            DebugLog.Write("Anomaly probe failed: " + root);
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static void ProbeBody()
     {
         lock (Gate)
         {

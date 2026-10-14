@@ -11,8 +11,15 @@ internal static class DrawScenePatch
     [HarmonyPrefix]
     private static void Prefix()
     {
-        FrameGenRuntime.BeginSceneCapture();
-        PostPpHudPass.BeginDraw();
+        try
+        {
+            FrameGenRuntime.BeginSceneCapture();
+            PostPpHudPass.BeginDraw();
+        }
+        catch (Exception e)
+        {
+            DebugLog.Write("DrawScene prefix: " + e.GetType().Name + ": " + e.Message);
+        }
     }
 
     [HarmonyPostfix]

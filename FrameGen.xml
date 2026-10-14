@@ -19,7 +19,7 @@ Compat: Certain rendering mods may not play nice until they use Anomaly.
         <Directory>ClientPlugin</Directory>
     </SourceDirectories>
 
-    <Platforms>Windows</Platforms>
+    <Platforms>Windows,Linux</Platforms>
 
     <!-- Do not list Master or Anomaly here. Anomaly is detected at runtime. -->
 

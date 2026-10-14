@@ -1,18 +1,18 @@
 using System.Collections.Generic;
 using System.Reflection;
 using ClientPlugin.FrameGen;
-using ClientPlugin.Patches;
 using ClientPlugin.RichHud;
 using ClientPlugin.Settings;
 using ClientPlugin.Settings.Layouts;
-using HarmonyLib;
 using Sandbox.Graphics.GUI;
 using VRage.Plugins;
 using VRage.Utils;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("SpaceEngineersFrameGen.Dx11")]
+
 #if !LOCAL_BUILD
-[assembly: AssemblyVersion("1.4.2.0")]
-[assembly: AssemblyFileVersion("1.4.2.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 #endif
 
 namespace ClientPlugin;
@@ -24,8 +24,6 @@ public sealed class Plugin : IPlugin
     public static Plugin Instance { get; private set; }
 
     private SettingsGenerator settingsGenerator;
-    private Harmony harmony;
-    private Harmony deviceHarmony;
     private bool disposed;
     private bool configUiDirty;
 
@@ -36,21 +34,10 @@ public sealed class Plugin : IPlugin
         Instance = this;
         settingsGenerator = new SettingsGenerator();
         DebugLog.Open();
-
-        GpuSupport.TryProbe();
-        AnomalyHook.Probe();
         AnomalyTerminalHook.TryInstall();
         HudOverlayBind.TryInstall();
-
-        harmony = new Harmony(Name);
-        harmony.PatchAll(Assembly.GetExecutingAssembly());
-        deviceHarmony = new Harmony(DeviceDisposePatch.HarmonyId);
-        DeviceDisposePatch.Apply(deviceHarmony);
-        AnomalyHook.Probe();
-        AnomalyTerminalHook.TryInstall();
-        HudOverlayBind.TryInstall();
-        MyLog.Default.WriteLine("FrameGen plugin initialized. GPU: " + GpuSupport.StatusLine);
-        DebugLog.Write("Harmony patched, plugin initialized GPU=" + GpuSupport.StatusLine);
+        if (AnomalyRenderer.Decided && !AnomalyRenderer.AllowDx11Device)
+            MyLog.Default.WriteLine(ClosedRoute("FrameGen"));
     }
 
     internal static void RefreshConfigUi()
@@ -66,19 +53,13 @@ public sealed class Plugin : IPlugin
     {
         if (disposed)
             return;
-
         disposed = true;
         DebugLog.Write("Dispose");
-        harmony = null;
-        // Leave Harmony patches in place. Pulsar only disposes plugins at
-        // process exit; UnpatchAll rewrites shared trampolines while other
-        // plugins may still be running. DeviceDisposePatch stays applied so
-        // FrameGen can shut down when the D3D device is released.
+        if (AnomalyRenderer.AllowDx11Device)
+            Dx11Bridge.Call("OnDispose");
         ConfigStorage.FlushPending(true);
-        FrameGenRuntime.Shutdown();
         AnomalyTerminalHook.Reset();
         HudOverlayBind.Reset();
-        GpuSupport.Reset();
         settingsGenerator = null;
         if (ReferenceEquals(Instance, this))
             Instance = null;
@@ -93,7 +74,10 @@ public sealed class Plugin : IPlugin
         HudOverlayBind.TryInstall();
         FlushConfigUi();
         ConfigStorage.FlushPending();
-        FrameGenRuntime.NotifyPluginsReady();
+        RequestRenderer(2, AnomalyRenderer.AllowGuestWork && Config.Current.Enabled);
+        if (!AnomalyRenderer.AllowDx11Device)
+            return;
+        Dx11Bridge.Call("OnUpdate");
     }
 
     void FlushConfigUi()
@@ -115,21 +99,39 @@ public sealed class Plugin : IPlugin
         }
     }
 
-    // ReSharper disable once UnusedMember.Global
     public void OpenConfigDialog()
     {
         var generator = settingsGenerator;
         if (disposed || generator == null)
             return;
-
-        GpuSupport.TryProbe();
+        if (AnomalyRenderer.AllowDx11Device)
+            Dx11Bridge.Call("PrepareConfig");
         generator.SetLayout<Simple>();
         generator.Dialog.RecreateControls(true);
         MyGuiSandbox.AddScreen(generator.Dialog);
     }
 
-    // Pulsar still calls these; FrameGen has no native asset DLL.
-    // ReSharper disable once UnusedMember.Global
+    static void RequestRenderer(int bit, bool enabled)
+    {
+        if (!AnomalyRenderer.AllowGuestWork)
+            return;
+        foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+        {
+            var type = assembly.GetType("ClientPlugin.Shaders.DisplayServices", false);
+            if (type == null)
+                continue;
+            type.GetMethod(enabled ? "Request" : "Release")?.Invoke(null, new object[] { bit });
+            return;
+        }
+    }
+
+    static string ClosedRoute(string name) =>
+        AnomalyRenderer.LinuxRequiresGuest
+            ? name + ": Linux stays idle until Anomaly's Vulkan guest bus is open"
+            : AnomalyRenderer.AllowGuestWork
+                ? name + ": Vulkan runs the DX11 warp and an extra immediate present. Show Status reads that path."
+                : name + ": DX11 device path closed (" + AnomalyRenderer.ActiveName + ")";
+
     public void LoadAssets(IReadOnlyDictionary<string, string> assets)
     {
         if (disposed)
@@ -138,7 +140,6 @@ public sealed class Plugin : IPlugin
         HudOverlayBind.TryInstall();
     }
 
-    // ReSharper disable once UnusedMember.Global
     public void LoadAssets(string folder)
     {
         if (disposed)

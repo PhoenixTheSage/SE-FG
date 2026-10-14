@@ -71,7 +71,7 @@ internal static class HudOverlayBind
                     var ok = register.Invoke(null, new object[]
                     {
                         OverlayId,
-                        (Func<string>)FrameGenRuntime.GetOverlayText,
+                        (Func<string>)OverlayText,
                     });
                     if (ok is false)
                         return false;
@@ -89,6 +89,13 @@ internal static class HudOverlayBind
 
             return false;
         }
+    }
+
+    static string OverlayText()
+    {
+        if (AnomalyRenderer.AllowDx11Device)
+            return Dx11Bridge.Call<string>("OverlayText") ?? "";
+        return FrameGenVulkan.OverlayText() ?? "";
     }
 
     public static void Reset()

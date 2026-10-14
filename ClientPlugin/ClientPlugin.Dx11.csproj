@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ClientPlugin</RootNamespace>
+    <AssemblyName>SpaceEngineersFrameGen.Dx11</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <Bin64 Condition="'$(Bin64)'=='' AND Exists('T:\SteamLibrary\steamapps\common\SpaceEngineers\Bin64')">T:\SteamLibrary\steamapps\common\SpaceEngineers\Bin64</Bin64>
+    <Bin64 Condition="'$(Bin64)'=='' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64')">C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64</Bin64>
+    <Bin64Dir>$(Bin64)\</Bin64Dir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="ClientPlugin.csproj" />
+    <Compile Include="FrameGen\Dx11Entry.cs" />
+    <Compile Include="FrameGen\AnomalyHook.cs" />
+    <Compile Include="FrameGen\FrameGenD3d.cs" />
+    <Compile Include="FrameGen\FrameGenHost.cs" />
+    <Compile Include="FrameGen\FrameGenRuntime.cs" />
+    <Compile Include="FrameGen\GpuSupport.cs" />
+    <Compile Include="FrameGen\D3dStateScope.cs" />
+    <Compile Include="FrameGen\CameraHistory.cs" />
+    <Compile Include="FrameGen\FrameInsertionState.cs" />
+    <Compile Include="FrameGen\FrameGenStatus.cs" />
+    <Compile Include="FrameGen\ShaderBytecode.cs" />
+    <Compile Include="FrameGen\VelocityAcceptance.cs" />
+    <Compile Include="FrameGen\PostPpHudSpace.cs" />
+    <Compile Include="FrameGen\RenderTraceBind.cs" />
+    <Compile Include="Patches\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <PackageReference Include="Krafs.Publicizer" Version="2.3.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Publicize Include="VRage.Render11" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Sandbox.Common"><HintPath>$(Bin64Dir)Sandbox.Common.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="Sandbox.Game"><HintPath>$(Bin64Dir)Sandbox.Game.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="Sandbox.Graphics"><HintPath>$(Bin64Dir)Sandbox.Graphics.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="VRage"><HintPath>$(Bin64Dir)VRage.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="VRage.Game"><HintPath>$(Bin64Dir)VRage.Game.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="VRage.Library"><HintPath>$(Bin64Dir)VRage.Library.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="VRage.Math"><HintPath>$(Bin64Dir)VRage.Math.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="VRage.Render"><HintPath>$(Bin64Dir)VRage.Render.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="VRage.Render11"><HintPath>$(Bin64Dir)VRage.Render11.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="SharpDX"><HintPath>$(Bin64Dir)SharpDX.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="SharpDX.Direct3D11"><HintPath>$(Bin64Dir)SharpDX.Direct3D11.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="SharpDX.DXGI"><HintPath>$(Bin64Dir)SharpDX.DXGI.dll</HintPath><Private>False</Private></Reference>
+  </ItemGroup>
+</Project>
