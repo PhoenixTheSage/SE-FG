@@ -11,8 +11,8 @@ using VRage.Utils;
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("SpaceEngineersFrameGen.Dx11")]
 
 #if !LOCAL_BUILD
-[assembly: AssemblyVersion("1.5.1.0")]
-[assembly: AssemblyFileVersion("1.5.1.0")]
+[assembly: AssemblyVersion("1.5.2.0")]
+[assembly: AssemblyFileVersion("1.5.2.0")]
 #endif
 
 namespace ClientPlugin;
@@ -55,6 +55,7 @@ public sealed class Plugin : IPlugin
             return;
         disposed = true;
         DebugLog.Write("Dispose");
+        RequestRenderer(2, false);
         if (AnomalyRenderer.AllowDx11Device)
             Dx11Bridge.Call("OnDispose");
         ConfigStorage.FlushPending(true);

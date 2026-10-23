@@ -107,7 +107,6 @@ internal static class FrameGenVulkan
         sb.AppendLine(string.IsNullOrEmpty(status.Evidence)
             ? "Motion vectors: no evaluate attempted"
             : status.Evidence);
-        sb.AppendLine("Reactive mask: not published (no Reactive pack)");
         sb.AppendLine("AfterUpscale: unused (FrameGen is not an upscaler) · claim none · display no");
         return sb.ToString();
     }
@@ -180,7 +179,8 @@ internal static class FrameGenVulkan
         var module = Module();
         if (module == IntPtr.Zero)
         {
-            _missing = true;
+            // Status can be opened before the renderer loads its native module.
+            // Only cache an absent export after the module is actually present.
             return false;
         }
         var exported = module == new IntPtr(1)

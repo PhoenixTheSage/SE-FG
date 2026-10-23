@@ -1,5 +1,11 @@
 # SE-FG changelog
 
+## 1.5.2 — 2026-10-23
+
+- Retry Vulkan status discovery when the native module has not loaded yet instead of permanently latching it missing.
+- Release the extra-present request on disposal.
+- Remove the stale blanket reactive-mask absence line; renderer evidence already reports current volume-reactive availability.
+
 ## 1.5.1 — 2026-10-14
 
 - Bind the DX11 companion to the live Pulsar core and release its assembly resolver on disposal.
